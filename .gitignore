@@ -1,0 +1,5 @@
+node_modules/
+stores/
+mnemex-data/
+test-mnemex-data-*/
+*.hex
