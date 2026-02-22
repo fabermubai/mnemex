@@ -138,6 +138,30 @@ class MnemexProtocol extends Protocol{
             return obj;
         }
 
+        if (json.op === 'record_fee') {
+            obj.type = 'record_fee';
+            obj.value = json;
+            return obj;
+        }
+
+        if (json.op === 'register_stake') {
+            obj.type = 'register_stake';
+            obj.value = json;
+            return obj;
+        }
+
+        if (json.op === 'slash_stake') {
+            obj.type = 'slash_stake';
+            obj.value = json;
+            return obj;
+        }
+
+        if (json.op === 'release_stake') {
+            obj.type = 'release_stake';
+            obj.value = json;
+            return obj;
+        }
+
         return null;
     }
 
@@ -148,13 +172,33 @@ class MnemexProtocol extends Protocol{
      */
     async printOptions(){
         console.log(' ');
-        console.log('- Mnemex Commands:');
+        console.log('- Mnemex Memory Commands:');
         console.log('- /register_memory --memory_id "<id>" --cortex "<name>" --content_hash "<sha256>" [--access "open"|"gated"] [--ts <ms>]');
         console.log('    Register a memory entry on-chain (submits MSB TX, costs 0.03 $TNK).');
         console.log('- /query_memory --memory_id "<id>"');
         console.log('    Look up a memory entry locally (no TX, no fee).');
         console.log('- /list_memories [--author "<pubkey>"] [--cortex "<name>"] --memory_id "<id>"');
         console.log('    Check memory existence in author/cortex indexes.');
+        console.log(' ');
+        console.log('- Mnemex Fee Commands:');
+        console.log('- /record_fee --memory_id "<id>" --operation "read_open"|"read_gated"|"skill_download" --payer "<pubkey>" --payment_txid "<hash>" --amount "<bigint>"');
+        console.log('    Record a fee payment and split revenue (submits MSB TX).');
+        console.log('- /get_balance --address "<pubkey>"');
+        console.log('    Check earnings for an address (local read).');
+        console.log('- /get_stats');
+        console.log('    Show protocol-wide fee statistics (local read).');
+        console.log('- /list_fees [--limit <n>]');
+        console.log('    Show recent fee records from state (default last 10).');
+        console.log(' ');
+        console.log('- Mnemex Staking Commands:');
+        console.log('- /register_stake --memory_id "<id>" --stake_txid "<hash>" --stake_amount "<bigint>"');
+        console.log('    Stake TNK on a memory you authored (submits MSB TX).');
+        console.log('- /slash_stake --memory_id "<id>" --reason "<text>"');
+        console.log('    Slash a stake for bad data — admin only (submits MSB TX).');
+        console.log('- /release_stake --memory_id "<id>"');
+        console.log('    Release a stake after verification — admin only (submits MSB TX).');
+        console.log('- /list_stakes [--address "<pubkey>"]');
+        console.log('    Show stakes for an address (defaults to current peer).');
         console.log(' ');
         console.log('- System Commands:');
         console.log('- /get --key "<key>" [--confirmed true|false] | reads subnet state key (confirmed defaults to true).');
@@ -248,6 +292,171 @@ class MnemexProtocol extends Protocol{
             if (!author && !cortex) {
                 const memory = await this.getSigned('mem/' + memoryId);
                 console.log('mem/' + memoryId + ':', memory);
+            }
+            return;
+        }
+
+        // ==================== Mnemex Fee Commands ====================
+
+        if (this.input.startsWith("/record_fee")) {
+            const args = this.parseArgs(input);
+            const memoryId = args.memory_id || args.id;
+            const operation = args.operation || args.op_type;
+            const payer = args.payer;
+            const paymentTxid = args.payment_txid || args.txid;
+            const amount = args.amount;
+            const tsRaw = args.ts;
+            if (!memoryId || !operation || !payer || !paymentTxid || !amount) {
+                console.log('Usage: /record_fee --memory_id "<id>" --operation "read_open"|"read_gated"|"skill_download" --payer "<pubkey>" --payment_txid "<hash>" --amount "<bigint>"');
+                return;
+            }
+            if (operation !== 'read_open' && operation !== 'read_gated' && operation !== 'skill_download') {
+                console.log('Error: --operation must be "read_open", "read_gated", or "skill_download".');
+                return;
+            }
+            const ts = tsRaw ? Number(tsRaw) : Date.now();
+            const command = this.safeJsonStringify({
+                op: 'record_fee',
+                memory_id: String(memoryId),
+                operation: String(operation),
+                payer: String(payer),
+                payment_txid: String(paymentTxid),
+                amount: String(amount),
+                ts: ts
+            });
+            console.log('Submitting record_fee TX...');
+            console.log('Run: /tx --command \'' + command + '\'');
+            return;
+        }
+
+        if (this.input.startsWith("/get_balance")) {
+            const args = this.parseArgs(input);
+            const address = args.address || args.addr;
+            if (!address) {
+                console.log('Usage: /get_balance --address "<pubkey>"');
+                return;
+            }
+            const balance = await this.getSigned('balance/' + address);
+            console.log('balance/' + address + ':', balance !== null ? balance : '0');
+            return;
+        }
+
+        if (this.input.startsWith("/get_stats")) {
+            const totalFees = await this.getSigned('stats/total_fees');
+            const feeCount = await this.getSigned('stats/fee_count');
+            console.log('stats:', {
+                total_fees: totalFees !== null ? totalFees : '0',
+                fee_count: feeCount !== null ? feeCount : 0
+            });
+            return;
+        }
+
+        if (this.input.startsWith("/list_fees")) {
+            const args = this.parseArgs(input);
+            const limit = args.limit ? Number(args.limit) : 10;
+            const results = [];
+            try {
+                const stream = this.peer.base.view.createReadStream({ gte: 'fee/', lt: 'fee0', limit: limit });
+                for await (const entry of stream) {
+                    const key = typeof entry.key === 'string' ? entry.key : b4a.toString(entry.key, 'utf8');
+                    results.push({ key, value: entry.value });
+                }
+            } catch (_e) {
+                console.log('Could not read fee records (view not ready).');
+                return;
+            }
+            if (results.length === 0) {
+                console.log('No fee records found.');
+            } else {
+                console.log('Fee records (' + results.length + '):');
+                for (const r of results) {
+                    console.log(' ', r.key, '→', r.value);
+                }
+            }
+            return;
+        }
+
+        // ==================== Mnemex Staking Commands ====================
+
+        if (this.input.startsWith("/register_stake")) {
+            const args = this.parseArgs(input);
+            const memoryId = args.memory_id || args.id;
+            const stakeTxid = args.stake_txid || args.txid;
+            const stakeAmount = args.stake_amount || args.amount;
+            if (!memoryId || !stakeTxid || !stakeAmount) {
+                console.log('Usage: /register_stake --memory_id "<id>" --stake_txid "<hash>" --stake_amount "<bigint>"');
+                return;
+            }
+            const command = this.safeJsonStringify({
+                op: 'register_stake',
+                memory_id: String(memoryId),
+                stake_txid: String(stakeTxid),
+                stake_amount: String(stakeAmount)
+            });
+            console.log('Submitting register_stake TX...');
+            console.log('Run: /tx --command \'' + command + '\'');
+            return;
+        }
+
+        if (this.input.startsWith("/slash_stake")) {
+            const args = this.parseArgs(input);
+            const memoryId = args.memory_id || args.id;
+            const reason = args.reason;
+            if (!memoryId || !reason) {
+                console.log('Usage: /slash_stake --memory_id "<id>" --reason "<text>"');
+                return;
+            }
+            const command = this.safeJsonStringify({
+                op: 'slash_stake',
+                memory_id: String(memoryId),
+                reason: String(reason)
+            });
+            console.log('Submitting slash_stake TX...');
+            console.log('Run: /tx --command \'' + command + '\'');
+            return;
+        }
+
+        if (this.input.startsWith("/release_stake")) {
+            const args = this.parseArgs(input);
+            const memoryId = args.memory_id || args.id;
+            if (!memoryId) {
+                console.log('Usage: /release_stake --memory_id "<id>"');
+                return;
+            }
+            const command = this.safeJsonStringify({
+                op: 'release_stake',
+                memory_id: String(memoryId)
+            });
+            console.log('Submitting release_stake TX...');
+            console.log('Run: /tx --command \'' + command + '\'');
+            return;
+        }
+
+        if (this.input.startsWith("/list_stakes")) {
+            const args = this.parseArgs(input);
+            const address = args.address || args.addr || this.peer.wallet.publicKey;
+            const totalStaked = await this.getSigned('staked_by/' + address);
+            console.log('Total staked by', address + ':', totalStaked !== null ? totalStaked : '0');
+            const results = [];
+            try {
+                const stream = this.peer.base.view.createReadStream({ gte: 'stake/', lt: 'stake0' });
+                for await (const entry of stream) {
+                    const key = typeof entry.key === 'string' ? entry.key : b4a.toString(entry.key, 'utf8');
+                    if (entry.value && entry.value.author === address) {
+                        results.push({ key, value: entry.value });
+                    }
+                }
+            } catch (_e) {
+                console.log('Could not read stake records (view not ready).');
+                return;
+            }
+            if (results.length === 0) {
+                console.log('No stake records found for this address.');
+            } else {
+                console.log('Stakes (' + results.length + '):');
+                for (const r of results) {
+                    console.log(' ', r.key, '→', r.value);
+                }
             }
             return;
         }

@@ -9,16 +9,20 @@ export class MemoryIndexer extends Feature {
      * MemoryIndexer — listens to sidechannel messages on cortex channels,
      * stores memory data locally, and records metadata on-chain via the contract.
      *
-     * Phase 1 (MVP): uses Feature injection (this.append) for on-chain registration.
-     * Phase 2: will switch to MSB TX submission with fees.
+     * Phase 1: uses Feature injection (this.append) for on-chain registration, no fees.
+     * Phase 2: adds payment gate — requires payment_txid before serving data,
+     *          records fee splits via record_fee contract entry.
      *
      * @param peer
-     * @param options — { dataDir, cortexChannels }
+     * @param options — { dataDir, cortexChannels, requirePayment, nodeAddress }
      */
     constructor(peer, options = {}) {
         super(peer, options);
         this.dataDir = options.dataDir || './mnemex-data';
         this.cortexChannels = options.cortexChannels || ['cortex-crypto'];
+        this.requirePayment = options.requirePayment || false;
+        this.nodeAddress = options.nodeAddress || null;
+        this.defaultFeeAmount = '30000000000000000'; // 0.03 TNK in smallest unit
     }
 
     /**
@@ -67,7 +71,9 @@ export class MemoryIndexer extends Feature {
         }
 
         if (msg.type === 'memory_read') {
-            this._handleMemoryRead(channel, msg);
+            this._handleMemoryRead(channel, msg).catch((err) => {
+                console.error('MemoryIndexer: memory_read error:', err?.message ?? err);
+            });
             return true;
         }
 
@@ -130,16 +136,18 @@ export class MemoryIndexer extends Feature {
     /**
      * Process a memory_read message:
      * 1. Look up the data locally
-     * 2. Respond on the same sidechannel with a memory_response message
+     * 2. If requirePayment and no payment_txid → respond with payment_required
+     * 3. If payment provided (or requirePayment is false) → serve data
+     * 4. After serving → record fee via contract entry (if payment_txid present)
      *
      * Expected message format:
-     * { v: 1, type: "memory_read", memory_id }
+     * { v: 1, type: "memory_read", memory_id, payment_txid? }
      *
      * @param channel
      * @param msg
      */
-    _handleMemoryRead(channel, msg) {
-        const { memory_id } = msg;
+    async _handleMemoryRead(channel, msg) {
+        const { memory_id, payment_txid } = msg;
 
         if (!memory_id) {
             console.log('MemoryIndexer: memory_read rejected — missing memory_id');
@@ -147,36 +155,73 @@ export class MemoryIndexer extends Feature {
         }
 
         const filePath = path.join(this.dataDir, memory_id + '.json');
-        let response;
 
+        // Memory not found locally
         if (!fs.existsSync(filePath)) {
-            response = {
+            const response = {
                 v: 1,
                 type: 'memory_response',
                 memory_id,
                 found: false,
                 data: null
             };
-        } else {
-            const raw = fs.readFileSync(filePath, 'utf8');
-            const stored = JSON.parse(raw);
-            response = {
-                v: 1,
-                type: 'memory_response',
-                memory_id,
-                found: true,
-                data: stored.data,
-                cortex: stored.cortex,
-                author: stored.author,
-                ts: stored.ts,
-                content_hash: stored.content_hash
-            };
+            if (this.peer.sidechannel) {
+                this.peer.sidechannel.broadcast(channel, JSON.stringify(response));
+                console.log('MemoryIndexer: memory_read response for', memory_id, '— found: false');
+            }
+            return;
         }
 
-        // Respond on the same sidechannel
+        // Payment gate: if requirePayment and no payment_txid, return payment_required
+        if (this.requirePayment && !payment_txid) {
+            const response = {
+                v: 1,
+                type: 'payment_required',
+                memory_id,
+                amount: this.defaultFeeAmount,
+                pay_to: this.nodeAddress,
+                ts: Date.now()
+            };
+            if (this.peer.sidechannel) {
+                this.peer.sidechannel.broadcast(channel, JSON.stringify(response));
+                console.log('MemoryIndexer: payment_required for', memory_id);
+            }
+            return;
+        }
+
+        // Serve data
+        const raw = fs.readFileSync(filePath, 'utf8');
+        const stored = JSON.parse(raw);
+        const response = {
+            v: 1,
+            type: 'memory_response',
+            memory_id,
+            found: true,
+            data: stored.data,
+            cortex: stored.cortex,
+            author: stored.author,
+            ts: stored.ts,
+            content_hash: stored.content_hash,
+            fee_recorded: !!payment_txid
+        };
+
         if (this.peer.sidechannel) {
             this.peer.sidechannel.broadcast(channel, JSON.stringify(response));
-            console.log('MemoryIndexer: memory_read response for', memory_id, '— found:', response.found);
+            console.log('MemoryIndexer: memory_read response for', memory_id, '— found: true');
+        }
+
+        // Record fee in contract if payment was provided
+        if (payment_txid) {
+            const payer = msg.payer || 'unknown';
+            await this.append('record_fee', {
+                memory_id: String(memory_id),
+                operation: stored.access === 'gated' ? 'read_gated' : 'read_open',
+                payer: String(payer),
+                payment_txid: String(payment_txid),
+                amount: this.defaultFeeAmount,
+                ts: Date.now()
+            });
+            console.log('MemoryIndexer: appended record_fee for', memory_id, '— txid:', payment_txid);
         }
     }
 }

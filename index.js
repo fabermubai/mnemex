@@ -63,6 +63,12 @@ const cortexChannels = cortexChannelsRaw
       .filter((value) => value.length > 0)
   : ['cortex-crypto'];
 
+const requirePaymentRaw =
+  (flags['require-payment'] && String(flags['require-payment'])) ||
+  env.REQUIRE_PAYMENT ||
+  '';
+const requirePayment = parseBool(requirePaymentRaw, false);
+
 const parseBool = (value, fallback) => {
   if (value === undefined || value === null || value === '') return fallback;
   return ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase());
@@ -455,6 +461,7 @@ if (scBridgeEnabled) {
   console.log('SC-Bridge:', `ws://${scBridgeHost}:${portDisplay}`);
 }
 console.log('Cortex channels:', cortexChannels.join(', '));
+console.log('Require payment:', requirePayment);
 console.log('================================================================');
 console.log('');
 
@@ -468,6 +475,8 @@ if (admin && admin.value === peer.wallet.publicKey && peer.base.writable) {
 const memoryIndexer = new MemoryIndexer(peer, {
   dataDir: './mnemex-data',
   cortexChannels: cortexChannels,
+  requirePayment: requirePayment,
+  nodeAddress: peer.wallet.address || peer.wallet.publicKey,
 });
 await peer.protocol.instance.addFeature('memory_indexer', memoryIndexer);
 memoryIndexer.start().catch((err) => console.error('MemoryIndexer feature stopped:', err?.message ?? err));
