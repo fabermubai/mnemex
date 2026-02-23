@@ -69,6 +69,12 @@ const requirePaymentRaw =
   '';
 const requirePayment = parseBool(requirePaymentRaw, false);
 
+const enableSkillsRaw =
+  (flags['enable-skills'] && String(flags['enable-skills'])) ||
+  env.ENABLE_SKILLS ||
+  '';
+const enableSkills = parseBool(enableSkillsRaw, true);
+
 const parseBool = (value, fallback) => {
   if (value === undefined || value === null || value === '') return fallback;
   return ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase());
@@ -462,6 +468,7 @@ if (scBridgeEnabled) {
 }
 console.log('Cortex channels:', cortexChannels.join(', '));
 console.log('Require payment:', requirePayment);
+console.log('Skills enabled:', enableSkills);
 console.log('================================================================');
 console.log('');
 
@@ -472,11 +479,26 @@ if (admin && admin.value === peer.wallet.publicKey && peer.base.writable) {
   timer.start().catch((err) => console.error('Timer feature stopped:', err?.message ?? err));
 }
 
+// Load registered cortex channels from contract state (merge with --cortex-channels)
+try {
+  const stream = peer.base.view.createReadStream({ gte: 'cortex/', lt: 'cortex0' });
+  for await (const entry of stream) {
+    const key = typeof entry.key === 'string' ? entry.key : b4a.toString(entry.key, 'utf8');
+    const cortexName = key.slice('cortex/'.length);
+    if (entry.value && entry.value.status === 'active' && !cortexChannels.includes(cortexName)) {
+      cortexChannels.push(cortexName);
+    }
+  }
+} catch (_e) {
+  // State may not be ready or no cortex channels registered yet
+}
+
 const memoryIndexer = new MemoryIndexer(peer, {
   dataDir: './mnemex-data',
   cortexChannels: cortexChannels,
   requirePayment: requirePayment,
   nodeAddress: peer.wallet.address || peer.wallet.publicKey,
+  enableSkills: enableSkills,
 });
 await peer.protocol.instance.addFeature('memory_indexer', memoryIndexer);
 memoryIndexer.start().catch((err) => console.error('MemoryIndexer feature stopped:', err?.message ?? err));
@@ -510,7 +532,8 @@ if (scBridgeEnabled) {
   });
 }
 
-const allChannels = [...new Set([sidechannelEntry, ...sidechannelExtras, ...cortexChannels])];
+const skillsChannels = enableSkills ? ['mnemex-skills'] : [];
+const allChannels = [...new Set([sidechannelEntry, ...sidechannelExtras, ...cortexChannels, ...skillsChannels])];
 
 const sidechannel = new Sidechannel(peer, {
   channels: allChannels,

@@ -162,6 +162,30 @@ class MnemexProtocol extends Protocol{
             return obj;
         }
 
+        if (json.op === 'register_skill') {
+            obj.type = 'register_skill';
+            obj.value = json;
+            return obj;
+        }
+
+        if (json.op === 'update_skill') {
+            obj.type = 'update_skill';
+            obj.value = json;
+            return obj;
+        }
+
+        if (json.op === 'record_skill_download') {
+            obj.type = 'record_skill_download';
+            obj.value = json;
+            return obj;
+        }
+
+        if (json.op === 'register_cortex') {
+            obj.type = 'register_cortex';
+            obj.value = json;
+            return obj;
+        }
+
         return null;
     }
 
@@ -199,6 +223,26 @@ class MnemexProtocol extends Protocol{
         console.log('    Release a stake after verification — admin only (submits MSB TX).');
         console.log('- /list_stakes [--address "<pubkey>"]');
         console.log('    Show stakes for an address (defaults to current peer).');
+        console.log(' ');
+        console.log('- Mnemex Skill Commands:');
+        console.log('- /register_skill --skill_id "<hash>" --name "<name>" --description "<desc>" --cortex "<cortex>" --price "<bigint>" --version "<ver>"');
+        console.log('    Publish a new Skill to the registry (submits MSB TX).');
+        console.log('- /update_skill --skill_id "<hash>" [--description "<desc>"] [--price "<bigint>"] [--version "<ver>"] [--status "active"|"deprecated"]');
+        console.log('    Update metadata of a Skill you authored (submits MSB TX).');
+        console.log('- /record_skill_download --skill_id "<hash>" --buyer "<pubkey>" --payment_txid "<hash>" --amount "<bigint>"');
+        console.log('    Record a completed skill download with fee split (submits MSB TX).');
+        console.log('- /query_skill --skill_id "<hash>"');
+        console.log('    Look up a skill by ID (local read).');
+        console.log('- /list_skills');
+        console.log('    List recent skills in the registry (local read, last 10).');
+        console.log('- /list_skills_by_cortex --cortex "<name>"');
+        console.log('    List skills registered under a cortex (local read).');
+        console.log(' ');
+        console.log('- Mnemex Cortex Commands:');
+        console.log('- /register_cortex --name "<name>" --description "<desc>"');
+        console.log('    Register a new cortex channel — admin only (submits MSB TX).');
+        console.log('- /list_cortex');
+        console.log('    List all registered cortex channels (local read).');
         console.log(' ');
         console.log('- System Commands:');
         console.log('- /get --key "<key>" [--confirmed true|false] | reads subnet state key (confirmed defaults to true).');
@@ -456,6 +500,193 @@ class MnemexProtocol extends Protocol{
                 console.log('Stakes (' + results.length + '):');
                 for (const r of results) {
                     console.log(' ', r.key, '→', r.value);
+                }
+            }
+            return;
+        }
+
+        // ==================== Mnemex Skill Commands ====================
+
+        if (this.input.startsWith("/register_skill")) {
+            const args = this.parseArgs(input);
+            const skillId = args.skill_id || args.id;
+            const name = args.name;
+            const description = args.description || args.desc;
+            const cortex = args.cortex;
+            const price = args.price;
+            const version = args.version || args.ver;
+            if (!skillId || !name || !description || !cortex || !price || !version) {
+                console.log('Usage: /register_skill --skill_id "<hash>" --name "<name>" --description "<desc>" --cortex "<cortex>" --price "<bigint>" --version "<ver>"');
+                return;
+            }
+            const command = this.safeJsonStringify({
+                op: 'register_skill',
+                skill_id: String(skillId),
+                name: String(name),
+                description: String(description),
+                cortex: String(cortex),
+                price: String(price),
+                version: String(version)
+            });
+            console.log('Submitting register_skill TX...');
+            console.log('Run: /tx --command \'' + command + '\'');
+            return;
+        }
+
+        if (this.input.startsWith("/update_skill")) {
+            const args = this.parseArgs(input);
+            const skillId = args.skill_id || args.id;
+            if (!skillId) {
+                console.log('Usage: /update_skill --skill_id "<hash>" [--description "<desc>"] [--price "<bigint>"] [--version "<ver>"] [--status "active"|"deprecated"]');
+                return;
+            }
+            const payload = { op: 'update_skill', skill_id: String(skillId) };
+            if (args.description || args.desc) payload.description = String(args.description || args.desc);
+            if (args.price) payload.price = String(args.price);
+            if (args.version || args.ver) payload.version = String(args.version || args.ver);
+            if (args.status) {
+                if (args.status !== 'active' && args.status !== 'deprecated') {
+                    console.log('Error: --status must be "active" or "deprecated".');
+                    return;
+                }
+                payload.status = String(args.status);
+            }
+            const command = this.safeJsonStringify(payload);
+            console.log('Submitting update_skill TX...');
+            console.log('Run: /tx --command \'' + command + '\'');
+            return;
+        }
+
+        if (this.input.startsWith("/record_skill_download")) {
+            const args = this.parseArgs(input);
+            const skillId = args.skill_id || args.id;
+            const buyer = args.buyer;
+            const paymentTxid = args.payment_txid || args.txid;
+            const amount = args.amount;
+            if (!skillId || !buyer || !paymentTxid || !amount) {
+                console.log('Usage: /record_skill_download --skill_id "<hash>" --buyer "<pubkey>" --payment_txid "<hash>" --amount "<bigint>"');
+                return;
+            }
+            const command = this.safeJsonStringify({
+                op: 'record_skill_download',
+                skill_id: String(skillId),
+                buyer: String(buyer),
+                payment_txid: String(paymentTxid),
+                amount: String(amount)
+            });
+            console.log('Submitting record_skill_download TX...');
+            console.log('Run: /tx --command \'' + command + '\'');
+            return;
+        }
+
+        if (this.input.startsWith("/query_skill")) {
+            const args = this.parseArgs(input);
+            const skillId = args.skill_id || args.id;
+            if (!skillId) {
+                console.log('Usage: /query_skill --skill_id "<hash>"');
+                return;
+            }
+            const skill = await this.getSigned('skill/' + skillId);
+            console.log('skill/' + skillId + ':', skill);
+            return;
+        }
+
+        if (this.input.startsWith("/list_skills_by_cortex")) {
+            const args = this.parseArgs(input);
+            const cortex = args.cortex;
+            if (!cortex) {
+                console.log('Usage: /list_skills_by_cortex --cortex "<name>"');
+                return;
+            }
+            const results = [];
+            try {
+                const prefix = 'skill_by_cortex/' + cortex + '/';
+                const stream = this.peer.base.view.createReadStream({ gte: prefix, lt: prefix + '\xff', limit: 50 });
+                for await (const entry of stream) {
+                    const key = typeof entry.key === 'string' ? entry.key : b4a.toString(entry.key, 'utf8');
+                    const skillId = key.slice(prefix.length);
+                    const skill = await this.getSigned('skill/' + skillId);
+                    if (skill) results.push({ skill_id: skillId, ...skill });
+                }
+            } catch (_e) {
+                console.log('Could not read skill records (view not ready).');
+                return;
+            }
+            if (results.length === 0) {
+                console.log('No skills found for cortex:', cortex);
+            } else {
+                console.log('Skills in cortex "' + cortex + '" (' + results.length + '):');
+                for (const s of results) {
+                    console.log(' ', s.skill_id, '—', s.name, '(v' + s.version + ', price:', s.price + ', downloads:', s.downloads + ')');
+                }
+            }
+            return;
+        }
+
+        if (this.input.startsWith("/list_skills")) {
+            const results = [];
+            try {
+                const stream = this.peer.base.view.createReadStream({ gte: 'skill/', lt: 'skill0', limit: 10 });
+                for await (const entry of stream) {
+                    const key = typeof entry.key === 'string' ? entry.key : b4a.toString(entry.key, 'utf8');
+                    if (key.startsWith('skill_by_')) continue;
+                    results.push({ key, value: entry.value });
+                }
+            } catch (_e) {
+                console.log('Could not read skill records (view not ready).');
+                return;
+            }
+            if (results.length === 0) {
+                console.log('No skills registered.');
+            } else {
+                console.log('Skills (' + results.length + '):');
+                for (const r of results) {
+                    const s = r.value;
+                    console.log(' ', r.key, '—', s.name, '(v' + s.version + ', price:', s.price + ', downloads:', s.downloads + ')');
+                }
+            }
+            return;
+        }
+
+        // ==================== Mnemex Cortex Commands ====================
+
+        if (this.input.startsWith("/register_cortex")) {
+            const args = this.parseArgs(input);
+            const name = args.name;
+            const description = args.description || args.desc;
+            if (!name || !description) {
+                console.log('Usage: /register_cortex --name "<name>" --description "<desc>"');
+                return;
+            }
+            const command = this.safeJsonStringify({
+                op: 'register_cortex',
+                cortex_name: String(name),
+                description: String(description)
+            });
+            console.log('Submitting register_cortex TX...');
+            console.log('Run: /tx --command \'' + command + '\'');
+            return;
+        }
+
+        if (this.input.startsWith("/list_cortex")) {
+            const results = [];
+            try {
+                const stream = this.peer.base.view.createReadStream({ gte: 'cortex/', lt: 'cortex0' });
+                for await (const entry of stream) {
+                    const key = typeof entry.key === 'string' ? entry.key : b4a.toString(entry.key, 'utf8');
+                    results.push({ key, value: entry.value });
+                }
+            } catch (_e) {
+                console.log('Could not read cortex records (view not ready).');
+                return;
+            }
+            if (results.length === 0) {
+                console.log('No cortex channels registered.');
+            } else {
+                console.log('Cortex channels (' + results.length + '):');
+                for (const r of results) {
+                    const c = r.value;
+                    console.log(' ', r.key, '—', c.description, '(status:', c.status + ', created_by:', c.created_by + ')');
                 }
             }
             return;
