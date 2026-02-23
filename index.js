@@ -63,6 +63,11 @@ const cortexChannels = cortexChannelsRaw
       .filter((value) => value.length > 0)
   : ['cortex-crypto'];
 
+const parseBool = (value, fallback) => {
+  if (value === undefined || value === null || value === '') return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase());
+};
+
 const requirePaymentRaw =
   (flags['require-payment'] && String(flags['require-payment'])) ||
   env.REQUIRE_PAYMENT ||
@@ -74,11 +79,6 @@ const enableSkillsRaw =
   env.ENABLE_SKILLS ||
   '';
 const enableSkills = parseBool(enableSkillsRaw, true);
-
-const parseBool = (value, fallback) => {
-  if (value === undefined || value === null || value === '') return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase());
-};
 
 const parseKeyValueList = (raw) => {
   if (!raw) return [];
@@ -373,19 +373,20 @@ if (subnetBootstrap) {
   subnetBootstrap = readHexFile(subnetBootstrapFile, 32);
 }
 
-const msbConfig = createMsbConfig(MSB_ENV.MAINNET, {
+const msbConfigOptions = {
   storeName: msbStoreName,
   storesDirectory: msbStoresDirectory,
   enableInteractiveMode: false,
-  dhtBootstrap: msbDhtBootstrap || undefined,
-});
+};
+if (msbDhtBootstrap) msbConfigOptions.dhtBootstrap = msbDhtBootstrap;
+const msbConfig = createMsbConfig(MSB_ENV.MAINNET, msbConfigOptions);
 
 const msbBootstrapHex = b4a.toString(msbConfig.bootstrap, 'hex');
 if (subnetBootstrap && subnetBootstrap === msbBootstrapHex) {
   throw new Error('Subnet bootstrap cannot equal MSB bootstrap.');
 }
 
-const peerConfig = createPeerConfig(PEER_ENV.MAINNET, {
+const peerConfigOptions = {
   storesDirectory: peerStoresDirectory,
   storeName: peerStoreNameRaw,
   bootstrap: subnetBootstrap || null,
@@ -394,8 +395,9 @@ const peerConfig = createPeerConfig(PEER_ENV.MAINNET, {
   enableBackgroundTasks: true,
   enableUpdater: true,
   replicate: true,
-  dhtBootstrap: peerDhtBootstrap || undefined,
-});
+};
+if (peerDhtBootstrap) peerConfigOptions.dhtBootstrap = peerDhtBootstrap;
+const peerConfig = createPeerConfig(PEER_ENV.MAINNET, peerConfigOptions);
 
 const ensureKeypairFile = async (keyPairPath) => {
   if (fs.existsSync(keyPairPath)) return;
