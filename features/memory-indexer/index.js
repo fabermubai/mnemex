@@ -173,15 +173,25 @@ export class MemoryIndexer extends Feature {
         fs.writeFileSync(filePath, JSON.stringify(stored, null, 2));
         console.log('MemoryIndexer: stored', memory_id, '→', filePath);
 
+        // Extract tags from message (array or comma-separated string)
+        let tags = '';
+        if (Array.isArray(msg.tags)) {
+            tags = msg.tags.map(t => String(t).trim().toLowerCase()).filter(t => t.length > 0).join(',');
+        } else if (typeof msg.tags === 'string') {
+            tags = msg.tags;
+        }
+
         // Inject metadata into contract via Feature mechanism (autobase consensus)
-        await this.append('register_memory', {
+        const appendPayload = {
             memory_id: String(memory_id),
             cortex: String(cortex),
             author: String(author),
             access: String(access || 'open'),
             content_hash: contentHash,
             ts: ts
-        });
+        };
+        if (tags) appendPayload.tags = tags;
+        await this.append('register_memory', appendPayload);
         console.log('MemoryIndexer: appended register_memory for', memory_id);
     }
 

@@ -197,10 +197,14 @@ class MnemexProtocol extends Protocol{
     async printOptions(){
         console.log(' ');
         console.log('- Mnemex Memory Commands:');
-        console.log('- /register_memory --memory_id "<id>" --cortex "<name>" --content_hash "<sha256>" [--access "open"|"gated"] [--ts <ms>]');
+        console.log('- /register_memory --memory_id "<id>" --cortex "<name>" --content_hash "<sha256>" [--access "open"|"gated"] [--tags "tag1,tag2"] [--ts <ms>]');
         console.log('    Register a memory entry on-chain (submits MSB TX, costs 0.03 $TNK).');
         console.log('- /query_memory --memory_id "<id>"');
         console.log('    Look up a memory entry locally (no TX, no fee).');
+        console.log('- /query_by_tag --tag "<tag>"');
+        console.log('    List all memory IDs indexed under a tag (range scan, no fee).');
+        console.log('- /list_by_cortex --cortex "<name>"');
+        console.log('    List all memory IDs indexed under a cortex (range scan, no fee).');
         console.log('- /list_memories [--author "<pubkey>"] [--cortex "<name>"] --memory_id "<id>"');
         console.log('    Check memory existence in author/cortex indexes.');
         console.log(' ');
@@ -225,8 +229,8 @@ class MnemexProtocol extends Protocol{
         console.log('    Show stakes for an address (defaults to current peer).');
         console.log(' ');
         console.log('- Mnemex Skill Commands:');
-        console.log('- /register_skill --skill_id "<hash>" --name "<name>" --description "<desc>" --cortex "<cortex>" --price "<bigint>" --version "<ver>"');
-        console.log('    Publish a new Skill to the registry (submits MSB TX).');
+        console.log('- /register_skill --skill_id "<id>" --name "<name>" --description "<desc>" --cortex "<cortex>" --inputs "<json>" --outputs "<json>" --content_hash "<sha256>" --price "<bigint>" --version "<ver>"');
+        console.log('    Publish a new Skill with descriptor (inputs/outputs/content) to the registry (submits MSB TX).');
         console.log('- /update_skill --skill_id "<hash>" [--description "<desc>"] [--price "<bigint>"] [--version "<ver>"] [--status "active"|"deprecated"]');
         console.log('    Update metadata of a Skill you authored (submits MSB TX).');
         console.log('- /record_skill_download --skill_id "<hash>" --buyer "<pubkey>" --payment_txid "<hash>" --amount "<bigint>"');
@@ -273,9 +277,10 @@ class MnemexProtocol extends Protocol{
             const cortex = args.cortex;
             const access = args.access || 'open';
             const contentHash = args.content_hash || args.hash;
+            const tags = args.tags || '';
             const tsRaw = args.ts;
             if (!memoryId || !cortex || !contentHash) {
-                console.log('Usage: /register_memory --memory_id "<id>" --cortex "<name>" --content_hash "<sha256>" [--access "open"|"gated"] [--ts <ms>]');
+                console.log('Usage: /register_memory --memory_id "<id>" --cortex "<name>" --content_hash "<sha256>" [--access "open"|"gated"] [--tags "tag1,tag2"] [--ts <ms>]');
                 return;
             }
             if (access !== 'open' && access !== 'gated') {
@@ -288,7 +293,7 @@ class MnemexProtocol extends Protocol{
             }
             const author = this.peer.wallet.publicKey;
             const ts = tsRaw ? Number(tsRaw) : Date.now();
-            const command = this.safeJsonStringify({
+            const txPayload = {
                 op: 'register_memory',
                 memory_id: String(memoryId),
                 cortex: String(cortex),
@@ -296,10 +301,39 @@ class MnemexProtocol extends Protocol{
                 access: String(access),
                 content_hash: String(contentHash),
                 ts: ts
-            });
+            };
+            if (tags) txPayload.tags = String(tags);
+            const command = this.safeJsonStringify(txPayload);
             console.log('Submitting register_memory TX...');
             console.log('Run: /tx --command \'' + command + '\'');
             console.log('Or simulate: /tx --command \'' + command + '\' --sim 1');
+            return;
+        }
+
+        if (this.input.startsWith("/query_by_tag")) {
+            const args = this.parseArgs(input);
+            const tag = args.tag;
+            if (!tag) {
+                console.log('Usage: /query_by_tag --tag "<tag>"');
+                return;
+            }
+            const tagKey = tag.trim().toLowerCase();
+            const prefix = 'mem_by_tag/' + tagKey + '/';
+            const results = [];
+            const view = this.peer.base.view;
+            const stream = view.createReadStream({ gte: prefix, lt: prefix.slice(0, -1) + '0' });
+            for await (const entry of stream) {
+                const key = typeof entry.key === 'string' ? entry.key
+                    : Buffer.isBuffer(entry.key) ? entry.key.toString('utf8')
+                    : String(entry.key);
+                const memId = key.slice(prefix.length);
+                results.push(memId);
+            }
+            console.log('query_by_tag "' + tagKey + '": ' + results.length + ' memories');
+            for (const id of results) {
+                const mem = await this.getSigned('mem/' + id);
+                console.log('  [' + id + ']', mem ? JSON.stringify(mem) : '(metadata missing)');
+            }
             return;
         }
 
@@ -312,6 +346,32 @@ class MnemexProtocol extends Protocol{
             }
             const memory = await this.getSigned('mem/' + memoryId);
             console.log('query_memory', memoryId + ':', memory);
+            return;
+        }
+
+        if (this.input.startsWith("/list_by_cortex")) {
+            const args = this.parseArgs(input);
+            const cortex = args.cortex;
+            if (!cortex) {
+                console.log('Usage: /list_by_cortex --cortex "<name>"');
+                return;
+            }
+            const prefix = 'mem_by_cortex/' + cortex + '/';
+            const results = [];
+            const view = this.peer.base.view;
+            const stream = view.createReadStream({ gte: prefix, lt: prefix.slice(0, -1) + '0' });
+            for await (const entry of stream) {
+                const key = typeof entry.key === 'string' ? entry.key
+                    : Buffer.isBuffer(entry.key) ? entry.key.toString('utf8')
+                    : String(entry.key);
+                const memId = key.slice(prefix.length);
+                results.push(memId);
+            }
+            console.log('list_by_cortex "' + cortex + '": ' + results.length + ' memories');
+            for (const id of results) {
+                const mem = await this.getSigned('mem/' + id);
+                console.log('  [' + id + ']', mem ? JSON.stringify(mem) : '(metadata missing)');
+            }
             return;
         }
 
@@ -513,10 +573,17 @@ class MnemexProtocol extends Protocol{
             const name = args.name;
             const description = args.description || args.desc;
             const cortex = args.cortex;
+            const inputs = args.inputs;
+            const outputs = args.outputs;
+            const contentHash = args.content_hash || args.hash;
             const price = args.price;
             const version = args.version || args.ver;
-            if (!skillId || !name || !description || !cortex || !price || !version) {
-                console.log('Usage: /register_skill --skill_id "<hash>" --name "<name>" --description "<desc>" --cortex "<cortex>" --price "<bigint>" --version "<ver>"');
+            if (!skillId || !name || !description || !cortex || !inputs || !outputs || !contentHash || !price || !version) {
+                console.log('Usage: /register_skill --skill_id "<id>" --name "<name>" --description "<desc>" --cortex "<cortex>" --inputs "<json>" --outputs "<json>" --content_hash "<sha256>" --price "<bigint>" --version "<ver>"');
+                return;
+            }
+            if (contentHash.length !== 64) {
+                console.log('Error: --content_hash must be a 64-char hex SHA256 hash.');
                 return;
             }
             const command = this.safeJsonStringify({
@@ -525,6 +592,9 @@ class MnemexProtocol extends Protocol{
                 name: String(name),
                 description: String(description),
                 cortex: String(cortex),
+                inputs: String(inputs),
+                outputs: String(outputs),
+                content_hash: String(contentHash),
                 price: String(price),
                 version: String(version)
             });
@@ -583,11 +653,15 @@ class MnemexProtocol extends Protocol{
             const args = this.parseArgs(input);
             const skillId = args.skill_id || args.id;
             if (!skillId) {
-                console.log('Usage: /query_skill --skill_id "<hash>"');
+                console.log('Usage: /query_skill --skill_id "<id>"');
                 return;
             }
             const skill = await this.getSigned('skill/' + skillId);
-            console.log('skill/' + skillId + ':', skill);
+            if (!skill) {
+                console.log('query_skill', skillId + ': null');
+                return;
+            }
+            console.log('query_skill', skillId + ':', JSON.stringify(skill));
             return;
         }
 
@@ -617,7 +691,10 @@ class MnemexProtocol extends Protocol{
             } else {
                 console.log('Skills in cortex "' + cortex + '" (' + results.length + '):');
                 for (const s of results) {
-                    console.log(' ', s.skill_id, '—', s.name, '(v' + s.version + ', price:', s.price + ', downloads:', s.downloads + ')');
+                    console.log('  [' + s.skill_id + '] ' + s.name + ' v' + s.version + ' — ' + s.description);
+                    console.log('    price: ' + s.price + ' | downloads: ' + s.downloads + ' | status: ' + s.status);
+                    if (s.inputs) console.log('    inputs: ' + s.inputs);
+                    if (s.outputs) console.log('    outputs: ' + s.outputs);
                 }
             }
             return;
@@ -626,11 +703,12 @@ class MnemexProtocol extends Protocol{
         if (this.input.startsWith("/list_skills")) {
             const results = [];
             try {
-                const stream = this.peer.base.view.createReadStream({ gte: 'skill/', lt: 'skill0', limit: 10 });
+                const stream = this.peer.base.view.createReadStream({ gte: 'skill/', lt: 'skill0', limit: 20 });
                 for await (const entry of stream) {
                     const key = typeof entry.key === 'string' ? entry.key : b4a.toString(entry.key, 'utf8');
-                    if (key.startsWith('skill_by_')) continue;
-                    results.push({ key, value: entry.value });
+                    if (key.startsWith('skill_by_') || key.startsWith('skill_download/')) continue;
+                    const skillId = key.slice('skill/'.length);
+                    results.push({ skill_id: skillId, ...entry.value });
                 }
             } catch (_e) {
                 console.log('Could not read skill records (view not ready).');
@@ -640,9 +718,12 @@ class MnemexProtocol extends Protocol{
                 console.log('No skills registered.');
             } else {
                 console.log('Skills (' + results.length + '):');
-                for (const r of results) {
-                    const s = r.value;
-                    console.log(' ', r.key, '—', s.name, '(v' + s.version + ', price:', s.price + ', downloads:', s.downloads + ')');
+                for (const s of results) {
+                    console.log('  [' + s.skill_id + '] ' + s.name + ' v' + s.version + ' — ' + s.description);
+                    console.log('    cortex: ' + s.cortex + ' | price: ' + s.price + ' | downloads: ' + s.downloads + ' | status: ' + s.status);
+                    if (s.inputs) console.log('    inputs: ' + s.inputs);
+                    if (s.outputs) console.log('    outputs: ' + s.outputs);
+                    if (s.content_hash) console.log('    content_hash: ' + s.content_hash);
                 }
             }
             return;

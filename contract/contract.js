@@ -20,6 +20,7 @@ class MnemexContract extends Contract {
         super(protocol, options);
 
         // register_memory — records a memory entry in contract state (TX command)
+        // tags is optional, comma-separated string (e.g. "bitcoin,market-analysis")
         this.addSchema('register_memory', {
             value: {
                 $$strict: true,
@@ -30,7 +31,8 @@ class MnemexContract extends Contract {
                 author: { type: "string", min: 1, max: 256 },
                 access: { type: "enum", values: ["open", "gated"] },
                 content_hash: { type: "string", min: 64, max: 64 },
-                ts: { type: "number", positive: true, integer: true }
+                ts: { type: "number", positive: true, integer: true },
+                tags: { type: "string", optional: true, max: 1024 }
             }
         });
 
@@ -106,6 +108,8 @@ class MnemexContract extends Contract {
         });
 
         // register_skill — publish a new Skill to the registry (TX command)
+        // inputs/outputs are JSON-serialized descriptors of what the skill expects/produces
+        // content_hash is the SHA256 of the skill's actual content (code, prompt, etc.)
         this.addSchema('register_skill', {
             value: {
                 $$strict: true,
@@ -115,6 +119,9 @@ class MnemexContract extends Contract {
                 name: { type: "string", min: 1, max: 128 },
                 description: { type: "string", min: 1, max: 1024 },
                 cortex: { type: "string", min: 1, max: 64 },
+                inputs: { type: "string", min: 1, max: 2048 },
+                outputs: { type: "string", min: 1, max: 2048 },
+                content_hash: { type: "string", min: 64, max: 64 },
                 price: { type: "string", min: 1, max: 64 },
                 version: { type: "string", min: 1, max: 16 }
             }
@@ -198,17 +205,29 @@ class MnemexContract extends Contract {
                 const existing = await _this.get('mem/' + memoryId);
                 if (existing !== null) return;
 
+                // Parse tags (comma-separated string or array)
+                let tags = [];
+                if (typeof val.tags === 'string') {
+                    tags = val.tags.split(',').map(t => t.trim().toLowerCase()).filter(t => t.length > 0 && t.length <= 64);
+                } else if (Array.isArray(val.tags)) {
+                    tags = val.tags.map(t => String(t).trim().toLowerCase()).filter(t => t.length > 0 && t.length <= 64);
+                }
+
                 const metadata = {
                     author: val.author,
                     cortex: val.cortex,
                     access: val.access || 'open',
                     content_hash: val.content_hash,
-                    ts: val.ts
+                    ts: val.ts,
+                    tags: tags
                 };
 
                 await _this.put('mem/' + memoryId, metadata);
                 await _this.put('mem_by_author/' + val.author + '/' + memoryId, true);
                 await _this.put('mem_by_cortex/' + val.cortex + '/' + memoryId, true);
+                for (const tag of tags) {
+                    await _this.put('mem_by_tag/' + tag + '/' + memoryId, true);
+                }
             }
 
             if (_this.op.key === 'record_fee') {
@@ -271,7 +290,7 @@ class MnemexContract extends Contract {
 
             if (_this.op.key === 'register_skill') {
                 const val = _this.op.value;
-                if (!val || !val.skill_id || !val.name || !val.description || !val.cortex || !val.price || !val.version || !val.author) return;
+                if (!val || !val.skill_id || !val.name || !val.description || !val.cortex || !val.inputs || !val.outputs || !val.content_hash || !val.price || !val.version || !val.author) return;
 
                 const skillId = val.skill_id;
                 const existing = await _this.get('skill/' + skillId);
@@ -288,6 +307,9 @@ class MnemexContract extends Contract {
                     name: val.name,
                     description: val.description,
                     cortex: val.cortex,
+                    inputs: val.inputs,
+                    outputs: val.outputs,
+                    content_hash: val.content_hash,
                     price: val.price,
                     version: val.version,
                     ts: ts,
@@ -343,6 +365,9 @@ class MnemexContract extends Contract {
                     name: skill.name,
                     description: skill.description,
                     cortex: skill.cortex,
+                    inputs: skill.inputs,
+                    outputs: skill.outputs,
+                    content_hash: skill.content_hash,
                     price: skill.price,
                     version: skill.version,
                     ts: skill.ts,
@@ -374,19 +399,30 @@ class MnemexContract extends Contract {
         const existing = await this.get('mem/' + memoryId);
         if (existing !== null) return new Error('Memory already exists');
 
+        // Parse tags (comma-separated string → array of trimmed lowercase tags)
+        const tagsRaw = this.value.tags || '';
+        const tags = tagsRaw
+            .split(',')
+            .map(t => t.trim().toLowerCase())
+            .filter(t => t.length > 0 && t.length <= 64);
+
         // Build the metadata object (read from this.value, never mutate it)
         const metadata = {
             author: author,
             cortex: cortex,
             access: this.value.access,
             content_hash: this.value.content_hash,
-            ts: this.value.ts
+            ts: this.value.ts,
+            tags: tags
         };
 
         // All put() calls at the end
         await this.put('mem/' + memoryId, metadata);
         await this.put('mem_by_author/' + author + '/' + memoryId, true);
         await this.put('mem_by_cortex/' + cortex + '/' + memoryId, true);
+        for (const tag of tags) {
+            await this.put('mem_by_tag/' + tag + '/' + memoryId, true);
+        }
     }
 
     /**
@@ -641,6 +677,9 @@ class MnemexContract extends Contract {
         const name = this.value.name;
         const description = this.value.description;
         const cortex = this.value.cortex;
+        const inputs = this.value.inputs;
+        const outputs = this.value.outputs;
+        const contentHash = this.value.content_hash;
         const price = this.value.price;
         const version = this.value.version;
 
@@ -662,6 +701,9 @@ class MnemexContract extends Contract {
             name: name,
             description: description,
             cortex: cortex,
+            inputs: inputs,
+            outputs: outputs,
+            content_hash: contentHash,
             price: price,
             version: version,
             ts: ts,
@@ -693,6 +735,9 @@ class MnemexContract extends Contract {
             name: skill.name,
             description: this.value.description !== undefined ? this.value.description : skill.description,
             cortex: skill.cortex,
+            inputs: skill.inputs,
+            outputs: skill.outputs,
+            content_hash: skill.content_hash,
             price: this.value.price !== undefined ? this.value.price : skill.price,
             version: this.value.version !== undefined ? this.value.version : skill.version,
             ts: skill.ts,
@@ -770,6 +815,9 @@ class MnemexContract extends Contract {
             name: skill.name,
             description: skill.description,
             cortex: skill.cortex,
+            inputs: skill.inputs,
+            outputs: skill.outputs,
+            content_hash: skill.content_hash,
             price: skill.price,
             version: skill.version,
             ts: skill.ts,
