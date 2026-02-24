@@ -215,6 +215,59 @@ Once your peer is running, use the CLI terminal or connect via SC-Bridge.
 
 **TX** = submits an MSB transaction (costs 0.03 $TNK). **Local** = reads state directly (free).
 
+## Usage with AI Agents
+
+Mnemex is the first Intercom subnet to document AI agent integration. Two approaches depending on your use case:
+
+### Simple: Claude Code (recommended for developers)
+
+Open the Mnemex project in [Claude Code](https://claude.com/claude-code). It reads the `CLAUDE.md` and understands all Mnemex commands natively. Just describe what you want in natural language:
+
+| You say | Claude Code does |
+|---------|-----------------|
+| "Write a memory about BTC at $65,000 on cortex-crypto" | Builds and submits a `register_memory` TX with content hash, tags, and timestamp |
+| "What memories are on cortex-crypto?" | Runs `/list_by_cortex --cortex "cortex-crypto"` and summarizes results |
+| "Register a skill called BTC Momentum Strategy" | Constructs the full `register_skill` TX with inputs, outputs, content hash, and price |
+| "What's my TNK balance?" | Runs `/msb` and `/get_balance` to show wallet balance and earnings |
+
+This is the easiest way to get started. No code to write, no API to learn. Claude Code handles TX construction, hash computation, and fee management automatically.
+
+### Advanced: Autonomous Agent via SC-Bridge
+
+SC-Bridge exposes a WebSocket at `ws://127.0.0.1:49222` that any program can connect to. This lets you build autonomous agents in any language, powered by any LLM.
+
+Minimal agent example (Node.js):
+
+```javascript
+const ws = new WebSocket('ws://127.0.0.1:49222');
+const crypto = await import('node:crypto');
+
+ws.onopen = () => {
+  // 1. Authenticate
+  ws.send(JSON.stringify({ type: 'auth', token: 'your-secret-token' }));
+
+  // 2. Write a memory
+  const data = JSON.stringify({ key: 'BTC/USD', value: 65000, source: 'binance' });
+  const contentHash = crypto.createHash('sha256').update(data).digest('hex');
+  ws.send(JSON.stringify({
+    type: 'cli',
+    command: `/tx --command '{"op":"register_memory","memory_id":"btc-${Date.now()}","cortex":"cortex-crypto","author":"YOUR_PUBKEY","access":"open","content_hash":"${contentHash}","tags":"bitcoin,price","ts":${Date.now()}}'`
+  }));
+
+  // 3. Read memories
+  ws.send(JSON.stringify({ type: 'cli', command: '/list_by_cortex --cortex "cortex-crypto"' }));
+};
+
+ws.onmessage = (e) => {
+  const msg = JSON.parse(e.data);
+  if (msg.type === 'cli_result') console.log(msg.output.join('\n'));
+};
+```
+
+This pattern works with any LLM backend (Claude, GPT, Llama, Mistral...) — the LLM decides *what* to remember, your agent code handles the WebSocket transport.
+
+**Use cases:** autonomous trading bots, Telegram/Discord integrations, web dashboards, multi-agent research pipelines, scheduled data collection.
+
 ## Community Token
 
 **$MNEMEX** is a community token on [TAP Protocol](https://tracsystems.io) (Bitcoin L1) for early supporters. The protocol itself runs entirely on $TNK — $MNEMEX is not a protocol token.
