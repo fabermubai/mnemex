@@ -8,6 +8,61 @@ Mnemex is a **decentralized memory protocol for AI agents** built on Trac Networ
 
 ---
 
+## Workflow Orchestration
+
+### 1. Plan Mode Default
+- Entrer en plan mode pour TOUTE tâche non triviale (3+ étapes ou décisions d'architecture)
+- Si quelque chose dérape, STOP et re-planifier immédiatement — ne pas insister
+- Utiliser le plan mode pour les étapes de vérification, pas juste le build
+- Écrire les specs détaillées en amont dans `tasks/todo.md`
+
+### 2. Subagent Strategy
+- Utiliser des sous-agents pour garder le contexte principal propre
+- Déléguer la recherche, l'exploration et l'analyse en parallèle aux sous-agents
+- Pour les problèmes complexes, répartir le compute via sous-agents
+- Une tâche par sous-agent pour une exécution ciblée
+
+### 3. Self-Improvement Loop
+- Après CHAQUE correction de l'utilisateur: mettre à jour `tasks/lessons.md` avec le pattern
+- Écrire des règles qui empêchent de refaire la même erreur
+- Itérer sur ces leçons jusqu'à ce que le taux d'erreur baisse
+- Relire lessons.md au début de chaque session pour le projet concerné
+
+### 4. Verification Before Done
+- Ne JAMAIS marquer une tâche comme terminée sans prouver qu'elle fonctionne
+- Diff entre main et les changements quand c'est pertinent
+- Se demander: "Est-ce qu'un staff engineer approuverait ça?"
+- Lancer les tests, vérifier les logs, démontrer la correctness
+- Les 3 phases doivent rester à 40/40 tests minimum
+
+### 5. Demand Elegance (Balanced)
+- Pour les changements non triviaux: pause et demander "y a-t-il une façon plus élégante?"
+- Si un fix semble hacky: "Sachant tout ce que je sais maintenant, implémenter la solution élégante"
+- Sauter ça pour les fixes simples et évidents — ne pas sur-ingénierer
+- Challenger son propre travail avant de le présenter
+
+### 6. Autonomous Bug Fixing
+- Quand un bug est reporté: le corriger directement, pas de hand-holding
+- Pointer les logs, erreurs, tests qui échouent — puis les résoudre
+- Zéro context switching requis de la part de l'utilisateur
+- EXCEPTION: toujours montrer le diff avant de toucher à la logique contract ou aux transactions TNK
+
+## Task Management
+1. **Plan First**: écrire le plan dans `tasks/todo.md` avec des items cochables
+2. **Verify Plan**: valider avec l'utilisateur avant de commencer l'implémentation
+3. **Track Progress**: marquer les items complétés au fur et à mesure
+4. **Explain Changes**: résumé haut niveau à chaque étape
+5. **Document Results**: ajouter une section review dans `tasks/todo.md`
+6. **Capture Lessons**: mettre à jour `tasks/lessons.md` après corrections
+
+## Core Principles
+- **Simplicité first**: chaque changement aussi simple que possible, impact minimal du code
+- **No Laziness**: trouver les causes racines, pas de fixes temporaires, standards de dev senior
+- **Impact minimal**: ne toucher que ce qui est nécessaire, éviter d'introduire des bugs
+- **Sécurité**: JAMAIS écrire de clés privées ou secrets dans les fichiers trackés
+
+---
+
 ## Repository Structure
 
 ```
@@ -616,6 +671,8 @@ peer.sidechannel.send('cortex-crypto', JSON.stringify({
 
 | File | When to read | What it contains |
 |------|-------------|------------------|
+| `tasks/todo.md` | Au début de chaque session | Plan courant, items à faire, suivi de progression |
+| `tasks/lessons.md` | Au début de chaque session | Erreurs passées à ne pas répéter, patterns appris |
 | `docs/WHITEPAPER.md` | For understanding WHY | Vision, problem, economics, use cases |
 | `docs/TRAC-KNOWLEDGE-BASE.md` | For Trac API details | MSB commands, RPC API, peer setup, contract rules |
 | `docs/TECHNICAL-ARCHITECTURE.md` | For implementation plan | Mapping of whitepaper concepts to code modules |
