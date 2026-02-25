@@ -680,6 +680,7 @@ peer.sidechannel.send('cortex-crypto', JSON.stringify({
 |------|-------------|------------------|
 | `tasks/todo.md` | Au début de chaque session | Plan courant, items à faire, suivi de progression |
 | `tasks/lessons.md` | Au début de chaque session | Erreurs passées à ne pas répéter, patterns appris |
+| `tasks/backlog.md` | Pour planifier les prochaines étapes | Idées futures, améliorations, intégrations à explorer |
 | `docs/WHITEPAPER.md` | For understanding WHY | Vision, problem, economics, use cases |
 | `docs/TRAC-KNOWLEDGE-BASE.md` | For Trac API details | MSB commands, RPC API, peer setup, contract rules |
 | `docs/TECHNICAL-ARCHITECTURE.md` | For implementation plan | Mapping of whitepaper concepts to code modules |
