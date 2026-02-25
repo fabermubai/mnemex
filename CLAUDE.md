@@ -126,6 +126,13 @@ mnemex/
 17. Use `b4a` (buffer-to-anything) for buffer operations, as Intercom does.
 18. Comments in English.
 
+### Transaction Confirmation Rule
+19. **ALWAYS show estimated cost and ask for confirmation BEFORE any action that spends TNK.**
+    - Display: the action, the Mnemex cost, the network fee (0.03 $TNK), and the total
+    - Wait for an explicit "yes" before executing
+    - AFTER execution: display the amount spent and the remaining balance
+    - Applies to: `register_memory`, `record_fee`, `register_stake`, `record_skill_download`, `register_skill`, `register_cortex`, and any TNK transfer
+
 ---
 
 ## Key Trac Concepts (Quick Reference)
