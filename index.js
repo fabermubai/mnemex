@@ -400,15 +400,14 @@ if (peerDhtBootstrap) peerConfigOptions.dhtBootstrap = peerDhtBootstrap;
 const peerConfig = createPeerConfig(PEER_ENV.MAINNET, peerConfigOptions);
 
 const ensureKeypairFile = async (keyPairPath) => {
-  if (fs.existsSync(keyPairPath)) return;
   fs.mkdirSync(path.dirname(keyPairPath), { recursive: true });
   await ensureTextCodecs();
   const wallet = new PeerWallet();
   await wallet.ready;
-  if (!wallet.secretKey) {
-    await wallet.generateKeyPair();
-  }
-  wallet.exportToFile(keyPairPath, b4a.alloc(0));
+  // initKeyPair handles both cases:
+  // - file exists → imports silently
+  // - file missing → interactive menu (generate new / restore from mnemonic / import file)
+  await wallet.initKeyPair(keyPairPath);
 };
 
 await ensureKeypairFile(msbConfig.keyPairPath);
