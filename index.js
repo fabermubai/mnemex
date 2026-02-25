@@ -44,7 +44,7 @@ const msbStoresDirectory = ensureTrailingSlash(
 const subnetChannel =
   (flags['subnet-channel'] && String(flags['subnet-channel'])) ||
   env.SUBNET_CHANNEL ||
-  'trac-peer-subnet';
+  'mnemex-v1';
 
 const sidechannelsRaw =
   (flags['sidechannels'] && String(flags['sidechannels'])) ||
@@ -281,10 +281,15 @@ if (sidechannelWelcomeRequired && !sidechannelOwnerMap.has(sidechannelEntry)) {
   );
 }
 
+// Admin peer's Autobase key — all Mnemex peers must join this Autobase.
+// Override with --subnet-bootstrap <hex> or SUBNET_BOOTSTRAP env var.
+const MNEMEX_SUBNET_BOOTSTRAP =
+  'f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0';
+
 const subnetBootstrapHex =
   (flags['subnet-bootstrap'] && String(flags['subnet-bootstrap'])) ||
   env.SUBNET_BOOTSTRAP ||
-  null;
+  MNEMEX_SUBNET_BOOTSTRAP;
 
 const scBridgeEnabledRaw =
   (flags['sc-bridge'] && String(flags['sc-bridge'])) ||

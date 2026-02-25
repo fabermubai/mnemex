@@ -15,3 +15,9 @@
 - **Erreur**: index.js bypassait le menu interactif de trac-wallet et générait le keypair silencieusement
 - **Fix**: remplacé par wallet.initKeyPair(keyPairPath) qui affiche le menu natif au premier lancement (generate, restore from mnemonic, import from file)
 - **Règle**: ne jamais bypasser le flow interactif de wallet pour les opérations sensibles (création de clés, seed phrase)
+
+## Subnet bootstrap Autobase
+- **Erreur**: chaque nouveau peer créait son propre Autobase au lieu de rejoindre celui de l'admin, car le subnet-bootstrap n'était pas hardcodé dans index.js
+- **Symptôme**: query_memory retourne null sur le nouveau peer malgré les connexions sidechannel et MSB OK
+- **Fix**: hardcoder MNEMEX_SUBNET_BOOTSTRAP dans index.js avec la clé de l'admin
+- **Règle**: tout subnet Intercom doit avoir son bootstrap key hardcodé pour que les nouveaux peers rejoignent le bon Autobase automatiquement
