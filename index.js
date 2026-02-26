@@ -267,7 +267,8 @@ const sidechannelWelcomeRequiredRaw =
   (flags['sidechannel-welcome-required'] && String(flags['sidechannel-welcome-required'])) ||
   env.SIDECHANNEL_WELCOME_REQUIRED ||
   '';
-const sidechannelWelcomeRequired = parseBool(sidechannelWelcomeRequiredRaw, true);
+// Mnemex: cortex channels must be open for memory_write/read — default false
+const sidechannelWelcomeRequired = parseBool(sidechannelWelcomeRequiredRaw, false);
 
 const sidechannelEntry = '0000mnemex';
 const sidechannelExtras = sidechannelsRaw

@@ -25,5 +25,8 @@
   },
   "overrides": {
     "trac-wallet": "1.0.1"
+  },
+  "devDependencies": {
+    "ws": "^8.19.0"
   }
 }

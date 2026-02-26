@@ -83,9 +83,15 @@ export class MemoryIndexer extends Feature {
         if (!isCortex && !isSkills) return false;
 
         let msg;
-        const raw = typeof payload === 'string' ? payload
-            : Buffer.isBuffer(payload) ? payload.toString('utf8')
-            : String(payload);
+        // Sidechannel wraps messages in an envelope: { type: "sidechannel", message: <inner>, ... }
+        // Extract the inner message before parsing.
+        const inner = (payload && typeof payload === 'object' && !Buffer.isBuffer(payload))
+            ? payload.message ?? payload
+            : payload;
+        const raw = typeof inner === 'string' ? inner
+            : Buffer.isBuffer(inner) ? inner.toString('utf8')
+            : (typeof inner === 'object' && inner !== null) ? JSON.stringify(inner)
+            : String(inner);
         try {
             msg = JSON.parse(raw);
         } catch (_e) {
@@ -323,6 +329,11 @@ export class MemoryIndexer extends Feature {
         fs.writeFileSync(filePath, JSON.stringify(stored, null, 2));
         console.log('MemoryIndexer: stored skill', skill_id, '→', filePath);
 
+        // Extract inputs/outputs from package and compute content_hash
+        const inputs = Array.isArray(pkg.inputs) ? pkg.inputs.join(',') : String(pkg.inputs || '');
+        const outputs = Array.isArray(pkg.outputs) ? pkg.outputs.join(',') : String(pkg.outputs || '');
+        const contentHash = crypto.createHash('sha256').update(JSON.stringify(pkg)).digest('hex');
+
         // Register skill in contract via Feature injection
         await this.append('register_skill', {
             skill_id: String(skill_id),
@@ -331,7 +342,10 @@ export class MemoryIndexer extends Feature {
             cortex: String(cortex),
             price: String(price),
             version: String(version),
-            author: String(author)
+            author: String(author),
+            inputs,
+            outputs,
+            content_hash: contentHash
         });
         console.log('MemoryIndexer: appended register_skill for', skill_id);
     }

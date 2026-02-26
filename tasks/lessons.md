@@ -21,3 +21,25 @@
 - **Symptôme**: query_memory retourne null sur le nouveau peer malgré les connexions sidechannel et MSB OK
 - **Fix**: hardcoder MNEMEX_SUBNET_BOOTSTRAP dans index.js avec la clé de l'admin
 - **Règle**: tout subnet Intercom doit avoir son bootstrap key hardcodé pour que les nouveaux peers rejoignent le bon Autobase automatiquement
+
+## Autobase writer permissions
+- **Symptôme**: un nouveau peer peut LIRE les memories (réplication OK) mais pas ÉCRIRE — `Feature.append()` échoue silencieusement ("Peer running features not writable"), `/tx` throw "Peer is not writable"
+- **Cause**: l'Autobase requiert une autorisation explicite de l'admin pour chaque writer. Un nouveau peer rejoint en lecture seule par défaut
+- **Fix**: sur le terminal admin, exécuter `/add_writer --key "<writer-key-hex>"` (commande intégrée à trac-peer, pas de code Mnemex nécessaire)
+- **Attention**: la clé à utiliser est le **writer key** (`peer.base.local.key`, affiché au démarrage comme "Peer writer key"), PAS la wallet pubkey ni l'adresse trac
+- **Dev**: `/set_auto_add_writers --enabled 1` sur admin active l'auto-ajout pour tous les peers qui se connectent — pratique en dev, à désactiver en production
+- **Pas de redémarrage nécessaire** : le changement se propage via réplication Autobase
+- **Faux positif "boucle infinie"** : quand `/tx` échoue sur un non-writer, le terminal trac-peer (REPL) catch l'erreur, l'affiche, et ré-affiche le prompt. Ce n'est pas une boucle — c'est le comportement normal du REPL après une erreur
+
+## Sidechannel envelope wrapping
+- **Symptôme**: `memory_write` envoyé via `/sc_send` sur `cortex-crypto` n'est jamais traité par le MemoryIndexer — `/get --key "mem/<id>"` retourne null
+- **Cause**: le sidechannel wrappe chaque message dans une enveloppe `{ type: "sidechannel", id, channel, from, origin, message: <contenu>, ts, ttl }`. Le MemoryIndexer recevait cet objet enveloppe et faisait `String(payload)` → `"[object Object]"` → `JSON.parse` échouait silencieusement
+- **Fix**: dans `features/memory-indexer/index.js`, extraire `payload.message` de l'enveloppe avant le parsing JSON. Voir handleMessage() lignes 85-95
+- **Deuxième point**: `broadcast()` envoie aux peers DISTANTS uniquement — `onMessage` ne fire jamais pour les messages broadcast par le peer local. Le test correct requiert 2 peers : un qui envoie (Neurominer) et un qui reçoit + indexe (Memory Node)
+- **Tests**: 40/40 tests unitaires passent après le fix (memory-flow: 10, fees: 15, skills: 15)
+
+## Sidechannel welcomeRequired bloque les cortex channels
+- **Symptôme**: agent2 broadcast un message sur cortex-crypto, l'admin ne le reçoit jamais (ni le MemoryIndexer, ni le SC-Bridge). Aucune erreur côté envoyeur.
+- **Cause**: `sidechannelWelcomeRequired` est `true` par défaut (hérité d'Intercom). Tous les canaux non-entry (cortex-crypto, mnemex-skills...) exigent un welcome handshake. Sans welcome, les messages entrants sont silencieusement droppés (`drop (awaiting welcome)` en mode debug).
+- **Fix**: dans `index.js` ligne 270, changer le défaut de `parseBool(..., true)` à `parseBool(..., false)`. Les cortex channels Mnemex doivent être ouverts.
+- **Règle**: pour tout nouveau canal Mnemex, vérifier qu'il ne nécessite pas de welcome/invite (sauf si c'est voulu pour un canal privé/gated)
