@@ -281,14 +281,16 @@ export class MemoryIndexer extends Feature {
         // Record fee in contract if payment was provided
         if (payment_txid) {
             const payer = msg.payer || 'unknown';
-            await this.append('record_fee', {
+            const feeEntry = {
                 memory_id: String(memory_id),
                 operation: stored.access === 'gated' ? 'read_gated' : 'read_open',
                 payer: String(payer),
                 payment_txid: String(payment_txid),
                 amount: this.defaultFeeAmount,
                 ts: Date.now()
-            });
+            };
+            if (this.nodeAddress) feeEntry.served_by = String(this.nodeAddress);
+            await this.append('record_fee', feeEntry);
             console.log('MemoryIndexer: appended record_fee for', memory_id, '— txid:', payment_txid);
         }
     }
@@ -426,12 +428,14 @@ export class MemoryIndexer extends Feature {
         // Record skill download in contract if payment was provided
         if (payment_txid) {
             const buyer = msg.buyer || msg.payer || 'unknown';
-            await this.append('record_skill_download', {
+            const dlEntry = {
                 skill_id: String(skill_id),
                 buyer: String(buyer),
                 payment_txid: String(payment_txid),
                 amount: stored.price || this.defaultFeeAmount
-            });
+            };
+            if (this.nodeAddress) dlEntry.served_by = String(this.nodeAddress);
+            await this.append('record_skill_download', dlEntry);
             console.log('MemoryIndexer: appended record_skill_download for', skill_id, '— txid:', payment_txid);
         }
     }

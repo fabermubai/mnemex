@@ -184,6 +184,82 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
             // 40% of 100 + 40% of 200 = 40 + 80 = 120
             assert.equal(ctx.state['balance_nodes'], '120000000000000000');
         });
+
+        it('should track per-node balance when served_by is provided', async () => {
+            const ctx = createMockContract();
+            seedMemory(ctx.state, 'mem-node', 'author-node');
+            ctx.value = {
+                memory_id: 'mem-node',
+                operation: 'read_open',
+                payer: 'payer-xxx',
+                payment_txid: 'tx-node-001',
+                amount: '100000000000000000',
+                ts: 1708617600000,
+                served_by: 'node-pubkey-aaa',
+            };
+
+            await callContract('record_fee', ctx);
+
+            // Per-node balance: 40% of 0.1 TNK
+            assert.equal(ctx.state['balance/node/node-pubkey-aaa'], '40000000000000000');
+            // Global pool still updated
+            assert.equal(ctx.state['balance_nodes'], '40000000000000000');
+            // Fee record includes served_by
+            const fee = ctx.state['fee/tx-node-001'];
+            assert.equal(fee.served_by, 'node-pubkey-aaa');
+        });
+
+        it('should accumulate per-node balance across multiple fees', async () => {
+            const ctx = createMockContract();
+            seedMemory(ctx.state, 'mem-node2', 'author-node2');
+
+            ctx.value = {
+                memory_id: 'mem-node2',
+                operation: 'read_open',
+                payer: 'p1',
+                payment_txid: 'tx-n2a',
+                amount: '100000000000000000',
+                ts: 1,
+                served_by: 'node-bbb',
+            };
+            await callContract('record_fee', ctx);
+
+            ctx.value = {
+                memory_id: 'mem-node2',
+                operation: 'read_open',
+                payer: 'p2',
+                payment_txid: 'tx-n2b',
+                amount: '200000000000000000',
+                ts: 2,
+                served_by: 'node-bbb',
+            };
+            await callContract('record_fee', ctx);
+
+            // 40% of 100 + 40% of 200 = 40 + 80 = 120
+            assert.equal(ctx.state['balance/node/node-bbb'], '120000000000000000');
+        });
+
+        it('should not create per-node balance when served_by is absent', async () => {
+            const ctx = createMockContract();
+            seedMemory(ctx.state, 'mem-nonode', 'author-nonode');
+            ctx.value = {
+                memory_id: 'mem-nonode',
+                operation: 'read_open',
+                payer: 'payer-xxx',
+                payment_txid: 'tx-nonode',
+                amount: '100000000000000000',
+                ts: 1708617600000,
+            };
+
+            await callContract('record_fee', ctx);
+
+            // No per-node balance key created
+            assert.equal(ctx.state['balance/node/undefined'], undefined);
+            // Global pool still works
+            assert.equal(ctx.state['balance_nodes'], '40000000000000000');
+            // Fee record has served_by: null
+            assert.equal(ctx.state['fee/tx-nonode'].served_by, null);
+        });
     });
 
     // ========== Stats accumulation ==========

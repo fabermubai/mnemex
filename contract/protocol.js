@@ -419,7 +419,8 @@ class MnemexProtocol extends Protocol{
                 return;
             }
             const ts = tsRaw ? Number(tsRaw) : Date.now();
-            const command = this.safeJsonStringify({
+            const servedBy = args.served_by || args.node;
+            const feeObj = {
                 op: 'record_fee',
                 memory_id: String(memoryId),
                 operation: String(operation),
@@ -427,7 +428,9 @@ class MnemexProtocol extends Protocol{
                 payment_txid: String(paymentTxid),
                 amount: String(amount),
                 ts: ts
-            });
+            };
+            if (servedBy) feeObj.served_by = String(servedBy);
+            const command = this.safeJsonStringify(feeObj);
             console.log('Submitting record_fee TX...');
             console.log('Run: /tx --command \'' + command + '\'');
             return;

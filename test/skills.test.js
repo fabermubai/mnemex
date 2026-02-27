@@ -246,6 +246,28 @@ describe('Phase 3 — Skills & Multi-Cortex', () => {
             assert.ok(result instanceof Error, 'Should return error for missing skill');
             assert.match(result.message, /not found/i);
         });
+
+        it('should track per-node balance when served_by is provided', async () => {
+            const ctx = createMockContract();
+            seedSkill(ctx.state, 'sk-dl-node', 'author-dlnode');
+            ctx.value = {
+                skill_id: 'sk-dl-node',
+                buyer: 'buyer-node',
+                payment_txid: 'dl-tx-node-001',
+                amount: '100000000000000000',
+                served_by: 'node-pubkey-skill',
+            };
+
+            await callContract('record_skill_download', ctx);
+
+            // 20% of 0.1 TNK to this node
+            assert.equal(ctx.state['balance/node/node-pubkey-skill'], '20000000000000000');
+            // Global pool still updated
+            assert.equal(ctx.state['balance_nodes'], '20000000000000000');
+            // Download record includes served_by
+            const dl = ctx.state['skill_download/dl-tx-node-001'];
+            assert.equal(dl.served_by, 'node-pubkey-skill');
+        });
     });
 
     // ========== MemoryIndexer Skill tests ==========

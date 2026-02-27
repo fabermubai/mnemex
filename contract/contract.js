@@ -57,7 +57,8 @@ class MnemexContract extends Contract {
                 payer: { type: "string", min: 1, max: 256 },
                 payment_txid: { type: "string", min: 1, max: 256 },
                 amount: { type: "string", min: 1, max: 64 },
-                ts: { type: "number", positive: true, integer: true }
+                ts: { type: "number", positive: true, integer: true },
+                served_by: { type: "string", min: 1, max: 256, optional: true }
             }
         });
 
@@ -150,7 +151,8 @@ class MnemexContract extends Contract {
                 skill_id: { type: "string", min: 1, max: 256 },
                 buyer: { type: "string", min: 1, max: 256 },
                 payment_txid: { type: "string", min: 1, max: 256 },
-                amount: { type: "string", min: 1, max: 64 }
+                amount: { type: "string", min: 1, max: 64 },
+                served_by: { type: "string", min: 1, max: 256, optional: true }
             }
         });
 
@@ -273,6 +275,16 @@ class MnemexContract extends Contract {
                 const newTotalFees = (totalFees + amount).toString();
                 const newFeeCount = feeCount + 1;
 
+                // Per-node balance if served_by is provided
+                const servedBy = val.served_by || null;
+                if (servedBy) {
+                    const existingNodeIndBal = await _this.get('balance/node/' + servedBy);
+                    const nodeIndBal = _this.protocol.safeBigInt(existingNodeIndBal !== null ? existingNodeIndBal : "0");
+                    if (nodeIndBal !== null) {
+                        await _this.put('balance/node/' + servedBy, (nodeIndBal + nodeShare).toString());
+                    }
+                }
+
                 await _this.put('fee/' + val.payment_txid, {
                     memory_id: val.memory_id,
                     operation: val.operation,
@@ -280,6 +292,7 @@ class MnemexContract extends Contract {
                     amount: val.amount,
                     creator_share: creatorShare.toString(),
                     node_share: nodeShare.toString(),
+                    served_by: servedBy,
                     ts: val.ts
                 });
                 await _this.put('balance/' + author, newCreatorBal);
@@ -352,12 +365,23 @@ class MnemexContract extends Contract {
                 const currentTime = await _this.get('currentTime');
                 const ts = currentTime !== null ? currentTime : 0;
 
+                // Per-node balance if served_by is provided
+                const servedBy = val.served_by || null;
+                if (servedBy) {
+                    const existingNodeIndBal = await _this.get('balance/node/' + servedBy);
+                    const nodeIndBal = _this.protocol.safeBigInt(existingNodeIndBal !== null ? existingNodeIndBal : "0");
+                    if (nodeIndBal !== null) {
+                        await _this.put('balance/node/' + servedBy, (nodeIndBal + nodeShare).toString());
+                    }
+                }
+
                 await _this.put('skill_download/' + val.payment_txid, {
                     skill_id: val.skill_id,
                     buyer: val.buyer,
                     amount: val.amount,
                     creator_share: creatorShare.toString(),
                     node_share: nodeShare.toString(),
+                    served_by: servedBy,
                     ts: ts
                 });
                 await _this.put('skill/' + val.skill_id, {
@@ -497,6 +521,15 @@ class MnemexContract extends Contract {
         const newTotalFees = (totalFees + amount).toString();
         const newFeeCount = feeCount + 1;
 
+        // Per-node balance if served_by is provided
+        const servedBy = this.value.served_by || null;
+        if (servedBy) {
+            const existingNodeIndBal = await this.get('balance/node/' + servedBy);
+            const nodeIndBal = this.protocol.safeBigInt(existingNodeIndBal !== null ? existingNodeIndBal : "0");
+            this.assert(nodeIndBal !== null);
+            await this.put('balance/node/' + servedBy, (nodeIndBal + nodeShare).toString());
+        }
+
         // All put() calls at the end
         await this.put('fee/' + paymentTxid, {
             memory_id: memoryId,
@@ -505,6 +538,7 @@ class MnemexContract extends Contract {
             amount: amountStr,
             creator_share: creatorShare.toString(),
             node_share: nodeShare.toString(),
+            served_by: servedBy,
             ts: ts
         });
         await this.put('balance/' + author, newCreatorBal);
@@ -825,6 +859,15 @@ class MnemexContract extends Contract {
             downloads: skill.downloads + 1
         };
 
+        // Per-node balance if served_by is provided
+        const servedBy = this.value.served_by || null;
+        if (servedBy) {
+            const existingNodeIndBal = await this.get('balance/node/' + servedBy);
+            const nodeIndBal = this.protocol.safeBigInt(existingNodeIndBal !== null ? existingNodeIndBal : "0");
+            this.assert(nodeIndBal !== null);
+            await this.put('balance/node/' + servedBy, (nodeIndBal + nodeShare).toString());
+        }
+
         // All put() calls at the end
         await this.put('skill_download/' + paymentTxid, {
             skill_id: skillId,
@@ -832,6 +875,7 @@ class MnemexContract extends Contract {
             amount: amountStr,
             creator_share: creatorShare.toString(),
             node_share: nodeShare.toString(),
+            served_by: servedBy,
             ts: ts
         });
         await this.put('skill/' + skillId, updatedSkill);
