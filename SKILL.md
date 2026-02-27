@@ -38,7 +38,9 @@ pear run . --peer-store-name my-agent --msb-store-name my-agent-msb \
   --sc-bridge 1 --sc-bridge-token <your-secret-token>
 ```
 
-The peer creates two wallets (MSB + subnet). For each, the human sees an interactive menu:
+The peer prompts for two wallets in sequence:
+
+**First prompt — Peer wallet** (P2P network identity):
 ```
 Key file was not found. How do you wish to proceed?
 [1]. Generate new keypair
@@ -46,10 +48,21 @@ Key file was not found. How do you wish to proceed?
 [3]. Import keypair from file
 Your choice(1/ 2/ 3/):
 ```
+Choose `1` (generate new). This keypair identifies your node on the P2P subnet. It's unique to this Mnemex peer — always create a fresh one.
 
-The human chooses an option, backs up the seed phrase, and waits for the peer to finish starting. Keypairs are saved at `stores/<peer-store-name>/db/keypair.json` and loaded silently on all subsequent runs.
+**Second prompt — MSB wallet** (Trac identity for TX signing and $TNK fees):
+```
+Key file was not found. How do you wish to proceed?
+[1]. Generate new keypair
+[2]. Restore keypair from 12 or 24-word mnemonic
+[3]. Import keypair from file
+Your choice(1/ 2/ 3/):
+```
+Choose `1` to create a new Trac identity, or `2` to import an existing seed phrase. If you already use Trac apps (Hypermall, Hypertokens, etc.), importing your existing seed (option 2) lets you reuse the same Trac address and $TNK balance across apps.
 
-> **Security:** The seed phrase controls the wallet's $TNK balance and identity. The human must store it securely and **never share it with the AI agent**. The agent only needs the pubkey (public, safe to share) to operate.
+Back up both seed phrases. Keypairs are saved at `stores/<peer-store-name>/db/keypair.json` and loaded silently on all subsequent runs. Once imported, the peer signs transactions automatically — the AI agent never has access to private keys.
+
+> **Security:** Seed phrases control the wallet's $TNK balance and identity. The human must store them securely and **never share them with the AI agent**. The agent only needs the pubkey (public, safe to share) to operate.
 
 **4. Human confirms the peer is running.** The agent can now connect.
 
