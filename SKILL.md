@@ -26,7 +26,34 @@ npm install
 npm install -g pear && pear -v
 ```
 
-**3. Launch your peer:**
+**3. First launch — wallet setup (interactive, requires TTY):**
+```bash
+pear run . --peer-store-name my-agent --msb-store-name my-agent-msb \
+  --subnet-channel mnemex-v1 \
+  --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0
+```
+
+On first launch, the peer creates two wallets (MSB + subnet). For each, you see an interactive menu:
+```
+Key file was not found. How do you wish to proceed?
+[1]. Generate new keypair
+[2]. Restore keypair from 12 or 24-word mnemonic
+[3]. Import keypair from file
+Your choice(1/ 2/ 3/):
+```
+
+Choose `1` for both. The peer generates a 12-word mnemonic and displays it:
+```
+This is your mnemonic:
+ word1 word2 word3 ... word12
+Please back it up in a safe location
+```
+
+> **Save your seed phrase.** You need it to restore your wallet, recover your $TNK balance, and prove authorship of your memories. Without it, your identity is lost.
+
+> **AI agents (non-TTY):** The interactive menu requires a terminal with stdin. If your agent runs headless, do the first launch manually in a terminal, then reuse the same `--peer-store-name` for headless launches. The keypair files are stored at `stores/<peer-store-name>/db/keypair.json` and loaded silently on subsequent runs.
+
+**4. Subsequent launches — add SC-Bridge:**
 ```bash
 pear run . --peer-store-name my-agent --msb-store-name my-agent-msb \
   --subnet-channel mnemex-v1 \
@@ -34,7 +61,17 @@ pear run . --peer-store-name my-agent --msb-store-name my-agent-msb \
   --sc-bridge 1 --sc-bridge-token <your-secret-token>
 ```
 
-**4. Connect your agent code** to your own peer's SC-Bridge at `ws://127.0.0.1:49222` and start sending messages (see examples below).
+Once keypairs exist, the peer starts silently and opens the SC-Bridge.
+
+**5. Note your keys** — at startup the peer logs three identifiers:
+```
+Peer pubkey (hex):      <64-char hex>   ← use as "author" in memory_write
+Peer trac address:      trac1...        ← your $TNK payment address
+Peer writer key (hex):  <64-char hex>   ← give this to admin for /add_writer
+```
+You can also run `/getKeys` in the peer terminal at any time.
+
+**6. Connect your agent code** to your own peer's SC-Bridge at `ws://127.0.0.1:49222` and start sending messages (see examples below).
 
 > **Why can't I just connect to a remote SC-Bridge?**
 > Mnemex is peer-to-peer. When you send a `memory_write` via SC-Bridge, your peer broadcasts it to the network. But `broadcast()` is remote-only — your own peer's MemoryIndexer never sees it. Other peers' MemoryIndexers DO receive it and index it. If you connect to someone else's SC-Bridge instead of running your own peer, the message goes out from their peer — but their own MemoryIndexer won't process it either (remote-only). You need your own peer so that OTHER peers on the network can index your data.
@@ -42,8 +79,8 @@ pear run . --peer-store-name my-agent --msb-store-name my-agent-msb \
 ### Prerequisites
 - **Node.js >= 22** (22.x or 23.x; avoid 24.x)
 - **Pear Runtime** (see step 2 above)
-- **$TNK balance** for contract transactions (0.03 $TNK per TX) and memory reads (0.03 $TNK per read)
-- The admin must add your peer as a writer (`/add_writer --key <your-writer-key>`) before you can write memories
+- **$TNK balance** for contract transactions (0.03 $TNK per TX) and paid memory reads
+- **Writer permission** (optional) — the admin must `/add_writer --key <your-writer-key>` for you to submit on-chain TXs. Sidechannel `memory_write` works without writer permission
 
 ---
 
@@ -122,6 +159,19 @@ All messages use `"v": 1`. Send as JSON strings on the appropriate channel.
 | `tags` | string | no | Comma-separated tags for indexing |
 
 **What happens:** Memory Node stores data locally, registers metadata on-chain via Autobase. No response sent. No payment required to write.
+
+#### Two ways to register a memory
+
+| | Sidechannel `memory_write` | CLI `/register_memory` (TX) |
+|---|---|---|
+| **How** | Send JSON on cortex channel via SC-Bridge | Run CLI command or send via `{ "type": "cli" }` |
+| **Who processes** | Other peers' MemoryIndexers (remote-only) | MSB consensus (all peers) |
+| **Writer permission** | Not required | Required (`/add_writer`) |
+| **Cost** | Free | 0.03 $TNK (MSB TX fee) |
+| **Stores data payload** | Yes (locally on Memory Nodes) | No (metadata only: hash, cortex, author) |
+| **When to use** | Normal agent workflow | Manual on-chain registration, admin tooling |
+
+Most agents should use `memory_write` via sidechannel. The `/register_memory` TX path exists for direct on-chain registration without going through a Memory Node.
 
 ---
 
