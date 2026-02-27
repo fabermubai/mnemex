@@ -26,17 +26,26 @@ npm install
 npm install -g pear && pear -v
 ```
 
-**3. First launch — wallet setup (human-only, requires TTY):**
+**3. Launch the peer in a separate terminal (human handles wallet setup):**
 
-The first launch creates wallet keypairs interactively. **The human operator must do this step** — the AI agent must never see, generate, or handle seed phrases.
+The agent opens a new terminal window for the human. The agent has **no visibility** into this terminal — seed phrases and private keys stay with the human.
 
-Ask the human to open a separate terminal and run:
+**Windows:**
 ```bash
-pear run . --peer-store-name my-agent --msb-store-name my-agent-msb \
-  --subnet-channel mnemex-v1 \
-  --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0 \
-  --sc-bridge 1 --sc-bridge-token <your-secret-token>
+start cmd /k "cd /d <repo-path> && pear run . --peer-store-name my-agent --msb-store-name my-agent-msb --subnet-channel mnemex-v1 --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0 --sc-bridge 1 --sc-bridge-token <your-secret-token>"
 ```
+
+**macOS:**
+```bash
+open -a Terminal "<repo-path>" --args bash -c "cd '<repo-path>' && pear run . --peer-store-name my-agent --msb-store-name my-agent-msb --subnet-channel mnemex-v1 --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0 --sc-bridge 1 --sc-bridge-token <your-secret-token>; exec bash"
+```
+
+**Linux:**
+```bash
+gnome-terminal -- bash -c "cd '<repo-path>' && pear run . --peer-store-name my-agent --msb-store-name my-agent-msb --subnet-channel mnemex-v1 --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0 --sc-bridge 1 --sc-bridge-token <your-secret-token>; exec bash"
+```
+
+Replace `<repo-path>` with the absolute path to the cloned mnemex directory and `<your-secret-token>` with a random string for SC-Bridge auth.
 
 The peer prompts for two wallets in sequence:
 
@@ -64,7 +73,7 @@ Back up both seed phrases. Keypairs are saved at `stores/<peer-store-name>/db/ke
 
 > **Security:** Seed phrases control the wallet's $TNK balance and identity. The human must store them securely and **never share them with the AI agent**. The agent only needs the pubkey (public, safe to share) to operate.
 
-**4. Human confirms the peer is running.** The agent can now connect.
+**4. Human completes wallet setup in the new terminal, then confirms the peer is running.** The agent can now connect.
 
 At startup the peer logs three public identifiers — the human should share these with the agent:
 ```
