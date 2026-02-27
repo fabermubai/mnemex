@@ -36,10 +36,7 @@ The agent opens a new terminal window for the human. The agent has **no visibili
 ```bat
 @echo off
 cd /d %~dp0
-pear run . --peer-store-name my-agent --msb-store-name my-agent-msb ^
-  --subnet-channel mnemex-v1 ^
-  --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0 ^
-  --sc-bridge 1 --sc-bridge-token <your-secret-token>
+pear run . --peer-store-name my-agent --msb-store-name my-agent-msb --subnet-channel mnemex-v1 --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0 --sc-bridge 1 --sc-bridge-token <your-secret-token> --sc-bridge-port 49222
 pause
 ```
 Then launch it in a separate window:
