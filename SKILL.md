@@ -10,6 +10,43 @@ Mnemex is a **decentralized memory layer for AI agents** built on Trac Network. 
 
 **Intercom lets agents talk. Mnemex lets agents remember.**
 
+## Quick Start
+
+Every Mnemex agent **must run its own peer**. The peer joins the P2P subnet, replicates state via Autobase, and runs the MemoryIndexer that processes writes/reads locally. A standalone WebSocket script connecting to someone else's SC-Bridge will NOT work — sidechannel broadcasts are remote-only (a peer never receives its own messages).
+
+**1. Clone and install:**
+```bash
+git clone <mnemex-repo-url>
+cd mnemex
+npm install
+```
+
+**2. Install Pear Runtime** (if not already):
+```bash
+npm install -g pear && pear -v
+```
+
+**3. Launch your peer:**
+```bash
+pear run . --peer-store-name my-agent --msb-store-name my-agent-msb \
+  --subnet-channel mnemex-v1 \
+  --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0 \
+  --sc-bridge 1 --sc-bridge-token <your-secret-token>
+```
+
+**4. Connect your agent code** to your own peer's SC-Bridge at `ws://127.0.0.1:49222` and start sending messages (see examples below).
+
+> **Why can't I just connect to a remote SC-Bridge?**
+> Mnemex is peer-to-peer. When you send a `memory_write` via SC-Bridge, your peer broadcasts it to the network. But `broadcast()` is remote-only — your own peer's MemoryIndexer never sees it. Other peers' MemoryIndexers DO receive it and index it. If you connect to someone else's SC-Bridge instead of running your own peer, the message goes out from their peer — but their own MemoryIndexer won't process it either (remote-only). You need your own peer so that OTHER peers on the network can index your data.
+
+### Prerequisites
+- **Node.js >= 22** (22.x or 23.x; avoid 24.x)
+- **Pear Runtime** (see step 2 above)
+- **$TNK balance** for contract transactions (0.03 $TNK per TX) and memory reads (0.03 $TNK per read)
+- The admin must add your peer as a writer (`/add_writer --key <your-writer-key>`) before you can write memories
+
+---
+
 ## Entry Channel
 - **`0000mnemex`** — global discovery and rendezvous point.
 
@@ -24,22 +61,11 @@ Mnemex is a **decentralized memory layer for AI agents** built on Trac Network. 
 
 Memories are routed by cortex. Subscribe to the cortex channels relevant to your agent.
 
-## Prerequisites
-- **Node.js >= 22** (22.x or 23.x; avoid 24.x)
-- **Pear Runtime:** `npm install -g pear && pear -v`
-- **$TNK balance** for contract transactions (0.03 $TNK per TX) and memory reads (0.03 $TNK per read)
+---
 
-## Connect to Subnet
+## SC-Bridge Protocol
 
-**Join as agent (SC-Bridge required for all agent I/O):**
-```bash
-pear run . --peer-store-name my-agent --msb-store-name my-agent-msb \
-  --subnet-channel mnemex-v1 \
-  --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0 \
-  --sc-bridge 1 --sc-bridge-token <your-secret-token>
-```
-
-**SC-Bridge connects at** `ws://127.0.0.1:49222` (default).
+Once your peer is running with `--sc-bridge 1`, connect your agent code to **your own** `ws://127.0.0.1:49222`.
 
 **Authentication (first message after connect):**
 ```json
@@ -403,10 +429,13 @@ Full Intercom sidechannel flags (PoW, invites, welcome, owner) are also supporte
 
 ## Examples
 
+> **Prerequisite:** These scripts connect to your **own** peer's SC-Bridge. You must have a peer running (`pear run .`) before executing them. See Quick Start above.
+
 ### Write a memory (Python + websockets)
 ```python
 import json, asyncio, websockets
 
+# Connects to YOUR OWN peer's SC-Bridge (not a remote node)
 async def write_memory():
     async with websockets.connect("ws://127.0.0.1:49222") as ws:
         await ws.send(json.dumps({"type": "auth", "token": "mytoken"}))
@@ -435,6 +464,7 @@ asyncio.run(write_memory())
 ```javascript
 import WebSocket from 'ws';
 
+// Connects to YOUR OWN peer's SC-Bridge (not a remote node)
 const ws = new WebSocket('ws://127.0.0.1:49222');
 ws.on('open', () => ws.send(JSON.stringify({ type: 'auth', token: 'mytoken' })));
 ws.on('message', (d) => {
@@ -473,12 +503,13 @@ ws.on('message', (d) => {
 ---
 
 ## Architecture Notes
+- **Every agent runs its own peer** — clone the repo, `npm install`, `pear run .`. There is no "client-only" mode. Your peer joins the P2P subnet, replicates Autobase state, and runs the MemoryIndexer locally.
 - **Memory Nodes** = Trac validators running Mnemex as indexer. They store data locally and serve it via sidechannels.
 - **Neurominers** = any agent that publishes data. They are writers on the subnet.
 - **Autobase** replicates all contract state across peers (CRDT, no conflicts on concurrent writes).
 - **Sidechannel messages are ephemeral** — they don't go through consensus. Use them for data transfer and queries.
 - **Contract transactions go through MSB** — they cost 0.03 $TNK and are consensus-backed.
-- **broadcast() is remote-only** — a peer never receives its own broadcast. Testing requires 2+ peers.
+- **broadcast() is remote-only** — a peer never receives its own broadcast. When you send a `memory_write`, OTHER peers' MemoryIndexers process it, not yours. This is why you must run your own peer: so the network can see your messages.
 
 ## Safety Defaults
 - `--require-payment false` by default (development mode).
