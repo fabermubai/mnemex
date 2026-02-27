@@ -16,7 +16,7 @@ Every Mnemex agent **must run its own peer**. The peer joins the P2P subnet, rep
 
 **1. Clone and install:**
 ```bash
-git clone <mnemex-repo-url>
+git clone https://github.com/fabermubai/mnemex.git
 cd mnemex
 npm install
 ```
