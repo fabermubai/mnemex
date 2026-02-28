@@ -205,7 +205,10 @@ class MnemexContract extends Contract {
 
                 const memoryId = val.memory_id;
                 const existing = await _this.get('mem/' + memoryId);
-                if (existing !== null) return;
+                if (existing !== null) {
+                    if (existing.author !== val.author) return;
+                    // same author → update allowed
+                }
 
                 // Parse tags (comma-separated string or array)
                 let tags = [];
@@ -419,9 +422,12 @@ class MnemexContract extends Contract {
         const author = this.value.author;
         const cortex = this.value.cortex;
 
-        // Check if memory already exists
+        // Check if memory already exists — same author can update, others are rejected
         const existing = await this.get('mem/' + memoryId);
-        if (existing !== null) return new Error('Memory already exists');
+        if (existing !== null) {
+            if (existing.author !== this.address) return new Error('Not the author');
+            // same author → update allowed, put() below will overwrite
+        }
 
         // Parse tags (comma-separated string → array of trimmed lowercase tags)
         const tagsRaw = this.value.tags || '';

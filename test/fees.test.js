@@ -538,3 +538,97 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
         });
     });
 });
+
+// ---------------------------------------------------------------------------
+// register_memory — update by same author
+// ---------------------------------------------------------------------------
+
+describe('register_memory — update by same author', () => {
+
+    it('should create a new memory', async () => {
+        const ctx = createMockContract();
+        ctx.address = 'author-aaa';
+        ctx.value = {
+            memory_id: 'mem-update-001',
+            cortex: 'cortex-crypto',
+            author: 'author-aaa',
+            access: 'open',
+            content_hash: 'a'.repeat(64),
+            ts: 1708617600000,
+            tags: 'bitcoin,price',
+        };
+
+        const result = await callContract('register_memory', ctx);
+        assert.equal(result, undefined, 'Should not return error');
+
+        const mem = ctx.state['mem/mem-update-001'];
+        assert.ok(mem, 'Memory should exist');
+        assert.equal(mem.author, 'author-aaa');
+        assert.equal(mem.content_hash, 'a'.repeat(64));
+        assert.equal(mem.ts, 1708617600000);
+        assert.ok(ctx.state['mem_by_author/author-aaa/mem-update-001']);
+        assert.ok(ctx.state['mem_by_cortex/cortex-crypto/mem-update-001']);
+    });
+
+    it('should allow update by same author', async () => {
+        const ctx = createMockContract();
+        // Seed existing memory
+        seedMemory(ctx.state, 'mem-update-002', 'author-bbb', {
+            cortex: 'cortex-crypto',
+            content_hash: 'b'.repeat(64),
+            ts: 1708617600000,
+        });
+        ctx.state['mem_by_author/author-bbb/mem-update-002'] = true;
+        ctx.state['mem_by_cortex/cortex-crypto/mem-update-002'] = true;
+
+        // Same author updates with new content_hash and ts
+        ctx.address = 'author-bbb';
+        ctx.value = {
+            memory_id: 'mem-update-002',
+            cortex: 'cortex-crypto',
+            author: 'author-bbb',
+            access: 'open',
+            content_hash: 'c'.repeat(64),
+            ts: 1708617700000,
+            tags: 'updated',
+        };
+
+        const result = await callContract('register_memory', ctx);
+        assert.equal(result, undefined, 'Should not return error for same author update');
+
+        const mem = ctx.state['mem/mem-update-002'];
+        assert.equal(mem.content_hash, 'c'.repeat(64), 'content_hash should be updated');
+        assert.equal(mem.ts, 1708617700000, 'ts should be updated');
+        assert.deepEqual(mem.tags, ['updated'], 'tags should be updated');
+    });
+
+    it('should reject update by different author', async () => {
+        const ctx = createMockContract();
+        // Seed existing memory owned by author-aaa
+        seedMemory(ctx.state, 'mem-update-003', 'author-aaa', {
+            cortex: 'cortex-crypto',
+            content_hash: 'a'.repeat(64),
+            ts: 1708617600000,
+        });
+
+        // Different author tries to update
+        ctx.address = 'author-different';
+        ctx.value = {
+            memory_id: 'mem-update-003',
+            cortex: 'cortex-crypto',
+            author: 'author-different',
+            access: 'open',
+            content_hash: 'd'.repeat(64),
+            ts: 1708617800000,
+        };
+
+        const result = await callContract('register_memory', ctx);
+        assert.ok(result instanceof Error, 'Should return error for different author');
+        assert.match(result.message, /not the author/i);
+
+        // Original memory should be unchanged
+        const mem = ctx.state['mem/mem-update-003'];
+        assert.equal(mem.author, 'author-aaa');
+        assert.equal(mem.content_hash, 'a'.repeat(64));
+    });
+});
