@@ -58,17 +58,7 @@ Replace `<repo-path>` with the absolute path to the cloned mnemex directory and 
 
 The peer prompts for two wallets in sequence:
 
-**First prompt — Peer wallet** (P2P network identity):
-```
-Key file was not found. How do you wish to proceed?
-[1]. Generate new keypair
-[2]. Restore keypair from 12 or 24-word mnemonic
-[3]. Import keypair from file
-Your choice(1/ 2/ 3/):
-```
-Choose `1` (generate new). This keypair identifies your node on the P2P subnet. It's unique to this Mnemex peer — always create a fresh one.
-
-**Second prompt — MSB wallet** (Trac identity for TX signing and $TNK fees):
+**First prompt — MSB wallet** (Trac identity for TX signing and $TNK fees):
 ```
 Key file was not found. How do you wish to proceed?
 [1]. Generate new keypair
@@ -77,6 +67,16 @@ Key file was not found. How do you wish to proceed?
 Your choice(1/ 2/ 3/):
 ```
 Choose `1` to create a new Trac identity, or `2` to import an existing seed phrase. If you already use Trac apps (Hypermall, Hypertokens, etc.), importing your existing seed (option 2) lets you reuse the same Trac address and $TNK balance across apps.
+
+**Second prompt — Peer wallet** (P2P network identity):
+```
+Key file was not found. How do you wish to proceed?
+[1]. Generate new keypair
+[2]. Restore keypair from 12 or 24-word mnemonic
+[3]. Import keypair from file
+Your choice(1/ 2/ 3/):
+```
+Choose `1` (generate new). This keypair identifies your node on the P2P subnet. It's unique to this Mnemex peer — always create a fresh one.
 
 Back up both seed phrases. Keypairs are saved at `stores/<peer-store-name>/db/keypair.json` and loaded silently on all subsequent runs. Once imported, the peer signs transactions automatically — the AI agent never has access to private keys.
 
