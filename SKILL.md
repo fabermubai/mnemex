@@ -591,3 +591,25 @@ ws.on('message', (d) => {
 
 ## Test Coverage
 83/83 tests passing (40 unit + 43 live mainnet). See `tasks/test-plan.md`.
+
+## Resolved Issues
+
+### Double-input on 2nd keypair prompt
+**Symptom:** When launching a peer with two empty stores (first run), the second wallet prompt (Peer wallet) required typing the choice **twice** before it was accepted.
+
+**Root cause:** `trac-wallet`'s `PeerWallet#setupKeypairInteractiveMode()` creates a `readline.createInterface({ input: new tty.ReadStream(0) })` for each call but never closes it. After the first `initKeyPair()` (MSB wallet), the readline and its `tty.ReadStream(0)` remained open. The second `initKeyPair()` (Peer wallet) created another readline on the same fd 0 — the zombie stream from the first call absorbed the first keystroke, requiring the user to type again.
+
+**Fix:** Added `await wallet.close()` after `wallet.initKeyPair()` in `ensureKeypairFile` (`index.js`). The `PeerWallet.close()` method already existed in trac-wallet — it properly closes the readline instance and frees stdin. No modification to trac-wallet needed.
+
+```javascript
+const ensureKeypairFile = async (keyPairPath) => {
+  fs.mkdirSync(path.dirname(keyPairPath), { recursive: true });
+  await ensureTextCodecs();
+  const wallet = new PeerWallet();
+  await wallet.ready;
+  await wallet.initKeyPair(keyPairPath);
+  await wallet.close();  // ← fix: free stdin for next prompt
+};
+```
+
+**Commit:** `1bae225`
