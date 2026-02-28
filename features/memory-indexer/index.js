@@ -159,12 +159,29 @@ export class MemoryIndexer extends Feature {
             return;
         }
 
+        // Check if memory already exists locally — only the original author can update
+        const filePath = path.join(this.dataDir, memory_id + '.json');
+        if (fs.existsSync(filePath)) {
+            const existingRaw = fs.readFileSync(filePath, 'utf8');
+            const existing = JSON.parse(existingRaw);
+            if (existing.author && existing.author !== author) {
+                console.log('MemoryIndexer: memory_write rejected — not the author (' + author.slice(0, 8) + '… vs ' + existing.author.slice(0, 8) + '…)');
+                if (this.peer.sidechannel) {
+                    this.peer.sidechannel.broadcast(channel, JSON.stringify({
+                        v: 1,
+                        type: 'memory_update_rejected',
+                        memory_id,
+                        reason: 'Not the author',
+                        ts: Date.now()
+                    }));
+                }
+                return;
+            }
+        }
+
         // Compute content hash from data payload
         const dataStr = JSON.stringify(data);
         const contentHash = crypto.createHash('sha256').update(dataStr).digest('hex');
-
-        // Store the full payload locally
-        const filePath = path.join(this.dataDir, memory_id + '.json');
         const stored = {
             memory_id,
             cortex,

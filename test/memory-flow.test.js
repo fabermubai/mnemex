@@ -203,4 +203,61 @@ describe('Memory Flow — Phase 1 MVP', () => {
         }));
         assert.equal(result, true);
     });
+
+    it('memory_write update by same author should overwrite file', async () => {
+        appendCalls = [];
+
+        // test-memory-001 was written by 'aa'.repeat(32) in a previous test
+        await indexer._handleMemoryWrite('cortex-crypto', {
+            v: 1,
+            type: 'memory_write',
+            memory_id: 'test-memory-001',
+            cortex: 'crypto',
+            data: { key: 'BTC/USD', value: 99000, source: 'updated' },
+            author: 'aa'.repeat(32), // same author
+            ts: 1708617700000,
+        });
+
+        // File should be updated
+        const filePath = path.join(TEST_DATA_DIR, 'test-memory-001.json');
+        const stored = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        assert.deepEqual(stored.data, { key: 'BTC/USD', value: 99000, source: 'updated' });
+        assert.equal(stored.ts, 1708617700000);
+
+        // append() should have been called for the update
+        assert.equal(appendCalls.length, 1);
+        assert.equal(appendCalls[0].key, 'register_memory');
+    });
+
+    it('memory_write update by different author should be rejected', async () => {
+        appendCalls = [];
+        broadcastCalls = [];
+
+        // test-memory-001 is owned by 'aa'.repeat(32)
+        await indexer._handleMemoryWrite('cortex-crypto', {
+            v: 1,
+            type: 'memory_write',
+            memory_id: 'test-memory-001',
+            cortex: 'crypto',
+            data: { key: 'BTC/USD', value: 0, source: 'attacker' },
+            author: 'ff'.repeat(32), // different author
+            ts: 1708617800000,
+        });
+
+        // append() should NOT have been called
+        assert.equal(appendCalls.length, 0);
+
+        // File should be unchanged (still the update from same author test)
+        const filePath = path.join(TEST_DATA_DIR, 'test-memory-001.json');
+        const stored = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        assert.deepEqual(stored.data, { key: 'BTC/USD', value: 99000, source: 'updated' });
+        assert.equal(stored.author, 'aa'.repeat(32));
+
+        // Should have broadcast a rejection
+        assert.equal(broadcastCalls.length, 1);
+        const response = JSON.parse(broadcastCalls[0].message);
+        assert.equal(response.type, 'memory_update_rejected');
+        assert.equal(response.memory_id, 'test-memory-001');
+        assert.equal(response.reason, 'Not the author');
+    });
 });
