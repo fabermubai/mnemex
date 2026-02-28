@@ -418,14 +418,20 @@ const ensureKeypairFile = async (keyPairPath, rlInstance) => {
   await wallet.initKeyPair(keyPairPath, rlInstance);
 };
 
-const walletRl = readline.createInterface({
-  input: new tty.ReadStream(0),
-  output: new tty.WriteStream(1),
-});
+const needsInteractive =
+  !fs.existsSync(msbConfig.keyPairPath) || !fs.existsSync(peerConfig.keyPairPath);
+
+let walletRl = null;
+if (needsInteractive) {
+  walletRl = readline.createInterface({
+    input: new tty.ReadStream(0),
+    output: new tty.WriteStream(1),
+  });
+}
 
 await ensureKeypairFile(msbConfig.keyPairPath, walletRl);
 await ensureKeypairFile(peerConfig.keyPairPath, walletRl);
-walletRl.close();
+if (walletRl) walletRl.close();
 
 console.log('=============== STARTING MSB ===============');
 const msb = new MainSettlementBus(msbConfig);
