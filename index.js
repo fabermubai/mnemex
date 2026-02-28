@@ -414,6 +414,7 @@ const ensureKeypairFile = async (keyPairPath) => {
   // - file exists → imports silently
   // - file missing → interactive menu (generate new / restore from mnemonic / import file)
   await wallet.initKeyPair(keyPairPath);
+  await wallet.close();
 };
 
 await ensureKeypairFile(msbConfig.keyPairPath);
