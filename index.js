@@ -728,8 +728,8 @@ if (scBridge) {
     } catch (_err) { /* ignore transient view errors */ }
   }, 2000);
 
-  // Clean up on process exit
-  process.on('beforeExit', () => clearInterval(_chatPollInterval));
+  // Clean up on process exit (process may not exist under Pear Runtime)
+  if (typeof process !== 'undefined') process.on('beforeExit', () => clearInterval(_chatPollInterval));
 }
 
 sidechannel
