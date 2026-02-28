@@ -76,7 +76,7 @@ Key file was not found. How do you wish to proceed?
 [3]. Import keypair from file
 Your choice(1/ 2/ 3/):
 ```
-Choose `1` (generate new). This keypair identifies your node on the P2P subnet. It's unique to this Mnemex peer — always create a fresh one.
+Choose `1` to generate a new P2P identity, or `2` to restore from a mnemonic. This keypair identifies your node on the subnet.
 
 Back up both seed phrases. Keypairs are saved at `stores/<peer-store-name>/db/keypair.json` and loaded silently on all subsequent runs. Once imported, the peer signs transactions automatically — the AI agent never has access to private keys.
 
