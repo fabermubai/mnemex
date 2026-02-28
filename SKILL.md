@@ -92,7 +92,7 @@ Peer writer key (hex):  <64-char hex>   ← give this to admin for /add_writer
 ```
 The human can also run `/getKeys` in the peer terminal at any time.
 
-**5. Connect your agent code** to the peer's SC-Bridge at `ws://127.0.0.1:49222` and start sending messages (see examples below). The agent takes over from here — all protocol operations go through SC-Bridge.
+**5. Connect your agent code** to the peer's SC-Bridge at `ws://127.0.0.1:<port>` (use the port configured via `--sc-bridge-port`, default `49222`) and start sending messages (see examples below). The agent takes over from here — all protocol operations go through SC-Bridge.
 
 > **Why can't I just connect to a remote SC-Bridge?**
 > Mnemex is peer-to-peer. When you send a `memory_write` via SC-Bridge, your peer broadcasts it to the network. But `broadcast()` is remote-only — your own peer's MemoryIndexer never sees it. Other peers' MemoryIndexers DO receive it and index it. If you connect to someone else's SC-Bridge instead of running your own peer, the message goes out from their peer — but their own MemoryIndexer won't process it either (remote-only). You need your own peer so that OTHER peers on the network can index your data.
@@ -123,7 +123,7 @@ Memories are routed by cortex. Subscribe to the cortex channels relevant to your
 
 ## SC-Bridge Protocol
 
-Once your peer is running with `--sc-bridge 1`, connect your agent code to **your own** `ws://127.0.0.1:49222`.
+Once your peer is running with `--sc-bridge 1`, connect your agent code to **your own** `ws://127.0.0.1:<port>` (default port: `49222`, configurable via `--sc-bridge-port`).
 
 **Authentication (first message after connect):**
 ```json
@@ -507,6 +507,7 @@ Full Intercom sidechannel flags (PoW, invites, welcome, owner) are also supporte
 import json, asyncio, websockets
 
 # Connects to YOUR OWN peer's SC-Bridge (not a remote node)
+# Replace "mytoken" with the value you set via --sc-bridge-token
 async def write_memory():
     async with websockets.connect("ws://127.0.0.1:49222") as ws:
         await ws.send(json.dumps({"type": "auth", "token": "mytoken"}))
@@ -536,6 +537,7 @@ asyncio.run(write_memory())
 import WebSocket from 'ws';
 
 // Connects to YOUR OWN peer's SC-Bridge (not a remote node)
+// Replace 'mytoken' with the value you set via --sc-bridge-token
 const ws = new WebSocket('ws://127.0.0.1:49222');
 ws.on('open', () => ws.send(JSON.stringify({ type: 'auth', token: 'mytoken' })));
 ws.on('message', (d) => {
@@ -581,6 +583,7 @@ ws.on('message', (d) => {
 - **Sidechannel messages are ephemeral** — they don't go through consensus. Use them for data transfer and queries.
 - **Contract transactions go through MSB** — they cost 0.03 $TNK and are consensus-backed.
 - **broadcast() is remote-only** — a peer never receives its own broadcast. When you send a `memory_write`, OTHER peers' MemoryIndexers process it, not yours. This is why you must run your own peer: so the network can see your messages.
+- **`mnemex-data/`** contains locally indexed memories (JSON files). This directory is per-node and gitignored — do not share it between peers. Each Memory Node builds its own local store from sidechannel messages.
 
 ## Safety Defaults
 - `--require-payment false` by default (development mode).
@@ -592,6 +595,34 @@ ws.on('message', (d) => {
 ## Test Coverage
 83/83 tests passing (40 unit + 43 live mainnet). See `tasks/test-plan.md`.
 
+## Troubleshooting
+
+### SC-Bridge doesn't start / connection refused
+- Verify `--sc-bridge 1` is in your launch command.
+- Check the port isn't already in use: `netstat -ano | findstr :49222` (Windows) or `lsof -i :49222` (macOS/Linux). Kill the blocking process before relaunching.
+- Ensure `--sc-bridge-token` is set — SC-Bridge won't accept connections without a token.
+
+### Wallet prompt hangs / no input accepted
+- The interactive prompts require a real TTY. If you launched the peer from a background process, script, or pipe, stdin is not a TTY and the prompt will hang. Always launch in a visible terminal window (see Quick Start step 3).
+- If the prompt appeared but input seems ignored, ensure no other `pear-runtime` process is holding the same store. Kill stale processes first (see below).
+
+### Stale pear-runtime processes (Windows)
+Before relaunching a peer, kill any leftover `pear-runtime` process that may hold locks on the store directory:
+```powershell
+Get-Process pear-runtime -ErrorAction SilentlyContinue | Stop-Process -Force
+```
+On macOS/Linux:
+```bash
+pkill -f pear-runtime
+```
+If you skip this, the new peer may fail to acquire the Autobase lock or show unexpected behavior.
+
+### Port already in use
+If `pear run` starts but SC-Bridge fails with `EADDRINUSE`, another process (possibly a previous peer) is still bound to the port. Kill it or choose a different port via `--sc-bridge-port`.
+
+### "Peer is not writable" / append() silent failure
+Your peer hasn't been authorized as a writer on the Autobase. Ask the admin to run `/add_writer --key <your-writer-key>` (the writer key shown at startup, NOT your wallet pubkey). Sidechannel `memory_write` works without writer permission — only on-chain TX commands require it.
+
 ## Resolved Issues
 
 ### Double-input on 2nd keypair prompt
@@ -599,15 +630,21 @@ ws.on('message', (d) => {
 
 **Root cause:** `trac-wallet`'s `PeerWallet#setupKeypairInteractiveMode()` creates a new `readline.createInterface({ input: new tty.ReadStream(0) })` per call when no readline instance is passed. After the first `initKeyPair()` (MSB wallet), the readline and its `tty.ReadStream(0)` remained open on fd 0 — the second call created a competing reader on the same fd, causing input to be swallowed.
 
-**Fix:** Create a single shared `readline.createInterface()` in `index.js` and pass it to both `initKeyPair()` calls via the `readline_instance` parameter that `trac-wallet` already supports. Close it after both prompts are done. No modification to trac-wallet needed.
+**Fix:** Create a single shared `readline.createInterface()` in `index.js` and pass it to both `initKeyPair()` calls via the `readline_instance` parameter that `trac-wallet` already supports. The readline is only created when at least one keypair file is missing (lazy init) — this avoids `EBADF` errors when running without a TTY (e.g. background processes). Close it after both prompts are done. No modification to trac-wallet needed.
 
 ```javascript
-const walletRl = readline.createInterface({
-  input: new tty.ReadStream(0),
-  output: new tty.WriteStream(1),
-});
+const needsInteractive =
+  !fs.existsSync(msbConfig.keyPairPath) || !fs.existsSync(peerConfig.keyPairPath);
+
+let walletRl = null;
+if (needsInteractive) {
+  walletRl = readline.createInterface({
+    input: new tty.ReadStream(0),
+    output: new tty.WriteStream(1),
+  });
+}
 
 await ensureKeypairFile(msbConfig.keyPairPath, walletRl);
 await ensureKeypairFile(peerConfig.keyPairPath, walletRl);
-walletRl.close();
+if (walletRl) walletRl.close();
 ```
