@@ -597,19 +597,17 @@ ws.on('message', (d) => {
 ### Double-input on 2nd keypair prompt
 **Symptom:** When launching a peer with two empty stores (first run), the second wallet prompt (Peer wallet) required typing the choice **twice** before it was accepted.
 
-**Root cause:** `trac-wallet`'s `PeerWallet#setupKeypairInteractiveMode()` creates a `readline.createInterface({ input: new tty.ReadStream(0) })` for each call but never closes it. After the first `initKeyPair()` (MSB wallet), the readline and its `tty.ReadStream(0)` remained open. The second `initKeyPair()` (Peer wallet) created another readline on the same fd 0 — the zombie stream from the first call absorbed the first keystroke, requiring the user to type again.
+**Root cause:** `trac-wallet`'s `PeerWallet#setupKeypairInteractiveMode()` creates a new `readline.createInterface({ input: new tty.ReadStream(0) })` per call when no readline instance is passed. After the first `initKeyPair()` (MSB wallet), the readline and its `tty.ReadStream(0)` remained open on fd 0 — the second call created a competing reader on the same fd, causing input to be swallowed.
 
-**Fix:** Added `await wallet.close()` after `wallet.initKeyPair()` in `ensureKeypairFile` (`index.js`). The `PeerWallet.close()` method already existed in trac-wallet — it properly closes the readline instance and frees stdin. No modification to trac-wallet needed.
+**Fix:** Create a single shared `readline.createInterface()` in `index.js` and pass it to both `initKeyPair()` calls via the `readline_instance` parameter that `trac-wallet` already supports. Close it after both prompts are done. No modification to trac-wallet needed.
 
 ```javascript
-const ensureKeypairFile = async (keyPairPath) => {
-  fs.mkdirSync(path.dirname(keyPairPath), { recursive: true });
-  await ensureTextCodecs();
-  const wallet = new PeerWallet();
-  await wallet.ready;
-  await wallet.initKeyPair(keyPairPath);
-  await wallet.close();  // ← fix: free stdin for next prompt
-};
-```
+const walletRl = readline.createInterface({
+  input: new tty.ReadStream(0),
+  output: new tty.WriteStream(1),
+});
 
-**Commit:** `1bae225`
+await ensureKeypairFile(msbConfig.keyPairPath, walletRl);
+await ensureKeypairFile(peerConfig.keyPairPath, walletRl);
+walletRl.close();
+```

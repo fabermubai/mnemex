@@ -1,6 +1,8 @@
 /** @typedef {import('pear-interface')} */
 import fs from 'fs';
 import path from 'path';
+import readline from 'readline';
+import tty from 'tty';
 import b4a from 'b4a';
 import PeerWallet from 'trac-wallet';
 import { Peer, Wallet, createConfig as createPeerConfig, ENV as PEER_ENV } from 'trac-peer';
@@ -405,7 +407,7 @@ const peerConfigOptions = {
 if (peerDhtBootstrap) peerConfigOptions.dhtBootstrap = peerDhtBootstrap;
 const peerConfig = createPeerConfig(PEER_ENV.MAINNET, peerConfigOptions);
 
-const ensureKeypairFile = async (keyPairPath) => {
+const ensureKeypairFile = async (keyPairPath, rlInstance) => {
   fs.mkdirSync(path.dirname(keyPairPath), { recursive: true });
   await ensureTextCodecs();
   const wallet = new PeerWallet();
@@ -413,12 +415,17 @@ const ensureKeypairFile = async (keyPairPath) => {
   // initKeyPair handles both cases:
   // - file exists → imports silently
   // - file missing → interactive menu (generate new / restore from mnemonic / import file)
-  await wallet.initKeyPair(keyPairPath);
-  await wallet.close();
+  await wallet.initKeyPair(keyPairPath, rlInstance);
 };
 
-await ensureKeypairFile(msbConfig.keyPairPath);
-await ensureKeypairFile(peerConfig.keyPairPath);
+const walletRl = readline.createInterface({
+  input: new tty.ReadStream(0),
+  output: new tty.WriteStream(1),
+});
+
+await ensureKeypairFile(msbConfig.keyPairPath, walletRl);
+await ensureKeypairFile(peerConfig.keyPairPath, walletRl);
+walletRl.close();
 
 console.log('=============== STARTING MSB ===============');
 const msb = new MainSettlementBus(msbConfig);
