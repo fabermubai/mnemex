@@ -588,6 +588,104 @@ peer.sidechannel = sidechannel;
 
 if (scBridge) {
   scBridge.attachSidechannel(sidechannel);
+
+  /* ── Chat commands via SC-Bridge ──────────────────────────────────────
+   * Wrap _handleClientMessage to intercept chat_send, chat_history, and
+   * chat_reply before they fall into the upstream "Unknown type" default.
+   * This avoids modifying features/sc-bridge/ (upstream Intercom).
+   * ──────────────────────────────────────────────────────────────────── */
+  const _origHandleClientMessage = scBridge._handleClientMessage.bind(scBridge);
+  scBridge._handleClientMessage = function (client, message) {
+    if (!message || typeof message !== 'object') {
+      _origHandleClientMessage(client, message);
+      return;
+    }
+
+    const reqId = Number.isInteger(message.id) ? message.id : null;
+    const reply = (payload) => {
+      const out = reqId !== null ? { id: reqId, ...payload } : payload;
+      scBridge._broadcastToClient(client, out);
+    };
+    const sendError = (error) => reply({ type: 'error', error });
+
+    switch (message.type) {
+      /* ── chat_send ──────────────────────────────────────────────────── */
+      case 'chat_send': {
+        const text = typeof message.message === 'string' ? message.message.trim() : '';
+        if (!text) { sendError('Missing message.'); return; }
+        (async () => {
+          try {
+            const chatStatus = await peer.base.view.get('chat_status');
+            if (!chatStatus || chatStatus.value !== 'on') { sendError('Chat is disabled.'); return; }
+            const replyTo = Number.isInteger(message.reply_to) ? message.reply_to : null;
+            const nonce = peer.protocol.instance.generateNonce();
+            const signature = { dispatch: {
+              type: 'msg',
+              msg: text,
+              address: peer.wallet.publicKey,
+              attachments: [],
+              deleted_by: null,
+              reply_to: replyTo,
+              pinned: false,
+              pin_id: null,
+            }};
+            const hash = peer.wallet.sign(JSON.stringify(signature) + nonce);
+            await peer.base.append({ type: 'msg', value: signature, hash, nonce });
+            reply({ type: 'chat_sent', message: text, reply_to: replyTo });
+          } catch (err) {
+            sendError(err?.message ?? String(err));
+          }
+        })();
+        return;
+      }
+
+      /* ── chat_history ───────────────────────────────────────────────── */
+      case 'chat_history': {
+        const limit = Number.isInteger(message.limit) && message.limit > 0
+          ? Math.min(message.limit, 100)
+          : 20;
+        (async () => {
+          try {
+            const lenEntry = await peer.base.view.get('msgl');
+            const total = lenEntry !== null ? lenEntry.value : 0;
+            const start = Math.max(0, total - limit);
+            const messages = [];
+            for (let i = start; i < total; i++) {
+              const entry = await peer.base.view.get('msg/' + i);
+              if (entry && entry.value) {
+                const nick = await peer.base.view.get('nick/' + entry.value.address);
+                messages.push({
+                  id: i + 1,
+                  author: entry.value.address,
+                  nick: nick?.value ?? null,
+                  message: entry.value.msg,
+                  reply_to: entry.value.reply_to ?? null,
+                  pinned: entry.value.pinned ?? false,
+                  deleted: entry.value.msg === null,
+                });
+              }
+            }
+            reply({ type: 'chat_history', total, messages });
+          } catch (err) {
+            sendError(err?.message ?? String(err));
+          }
+        })();
+        return;
+      }
+
+      /* ── chat_reply (alias for chat_send with reply_to) ─────────────── */
+      case 'chat_reply': {
+        if (!Number.isInteger(message.reply_to)) { sendError('Missing reply_to (message ID).'); return; }
+        message.type = 'chat_send';
+        scBridge._handleClientMessage(client, message);
+        return;
+      }
+
+      default:
+        _origHandleClientMessage(client, message);
+    }
+  };
+
   try {
     scBridge.start();
   } catch (err) {
