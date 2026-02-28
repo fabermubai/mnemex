@@ -692,6 +692,44 @@ if (scBridge) {
     console.error('SC-Bridge failed to start:', err?.message ?? err);
   }
   peer.scBridge = scBridge;
+
+  /* ── Chat incoming broadcast ────────────────────────────────────────────
+   * Poll the Autobase view for new chat messages every 2s and push them
+   * to all connected SC-Bridge clients as { type: "chat_incoming", ... }.
+   * This gives headless agents real-time chat without polling chat_history.
+   * ──────────────────────────────────────────────────────────────────── */
+  let _chatLastSeen = 0;
+  const _chatPollInterval = setInterval(async () => {
+    try {
+      const lenEntry = await peer.base.view.get('msgl');
+      const total = lenEntry !== null ? lenEntry.value : 0;
+      if (_chatLastSeen === 0) { _chatLastSeen = total; return; }
+      if (total <= _chatLastSeen) return;
+
+      for (let i = _chatLastSeen; i < total; i++) {
+        const entry = await peer.base.view.get('msg/' + i);
+        if (!entry || !entry.value) continue;
+        const nick = await peer.base.view.get('nick/' + entry.value.address);
+        const payload = {
+          type: 'chat_incoming',
+          id: i + 1,
+          author: entry.value.address,
+          nick: nick?.value ?? null,
+          message: entry.value.msg,
+          reply_to: entry.value.reply_to ?? null,
+          ts: Date.now(),
+        };
+        for (const client of scBridge.clients) {
+          if (!client.ready) continue;
+          scBridge._broadcastToClient(client, payload);
+        }
+      }
+      _chatLastSeen = total;
+    } catch (_err) { /* ignore transient view errors */ }
+  }, 2000);
+
+  // Clean up on process exit
+  process.on('beforeExit', () => clearInterval(_chatPollInterval));
 }
 
 sidechannel

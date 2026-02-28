@@ -9,6 +9,9 @@
 - [ ] Bot Telegram connecté à Mnemex via SC-Bridge
 - [ ] Exemple d'agent autonome (Claude/GPT) connecté via WebSocket
 
+## Contract
+- [ ] Memory update — permettre l'écrasement on-chain si `existing.author === new.author` (actuellement first-write-wins, le data local est écrasé mais le metadata on-chain reste bloqué sur le premier write)
+
 ## Économie
 - [ ] Étudier l'ajout d'un "protocol fee" (petit % sur chaque transaction Mnemex qui va au déployeur/admin)
 - [ ] Documenter les 25% deployer fees du MSB déjà en place
