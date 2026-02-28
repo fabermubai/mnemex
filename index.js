@@ -607,3 +607,29 @@ sidechannel
 
 const terminal = new Terminal(peer);
 await terminal.start();
+
+/* ── Auto-add writers ─────────────────────────────────────────────────────
+ * Mnemex is an open network: any agent that joins the subnet should be
+ * able to write memories.  We enable auto_add_writers on every admin boot
+ * so new peers become writable automatically (no manual /add_writer).
+ * Spam/abuse prevention is handled by staking & fees (Phase 2), not by
+ * restricting Autobase write access.
+ * ──────────────────────────────────────────────────────────────────────── */
+try {
+  const nonce = peer.protocol.instance.generateNonce();
+  const msg = { type: 'setAutoAddWriters', key: 'on' };
+  const hash = peer.wallet.sign(JSON.stringify(msg) + nonce);
+  await peer.base.append({
+    type: 'setAutoAddWriters',
+    key: 'on',
+    value: { msg },
+    hash,
+    nonce,
+  });
+  console.log('Auto-add writers: enabled');
+} catch (err) {
+  // Non-admin peers cannot set this — silently skip.
+  if (err?.message !== 'Peer is not writable.') {
+    console.error('Auto-add writers failed:', err?.message ?? err);
+  }
+}

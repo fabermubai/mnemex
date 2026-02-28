@@ -58,7 +58,7 @@ Replace `<repo-path>` with the absolute path to the cloned mnemex directory and 
 
 The peer prompts for two wallets in sequence:
 
-**First prompt — MSB wallet** (Trac identity for TX signing and $TNK fees):
+**First prompt — MSB wallet** (network identity on the Main Settlement Bus):
 ```
 Key file was not found. How do you wish to proceed?
 [1]. Generate new keypair
@@ -66,9 +66,9 @@ Key file was not found. How do you wish to proceed?
 [3]. Import keypair from file
 Your choice(1/ 2/ 3/):
 ```
-Choose `1` to create a new Trac identity, or `2` to import an existing seed phrase. If you already use Trac apps (Hypermall, Hypertokens, etc.), importing your existing seed (option 2) lets you reuse the same Trac address and $TNK balance across apps.
+This keypair identifies your node on the MSB network. It does **not** hold or spend $TNK for subnet transactions. Choose `1` to generate a new identity — this is fine even on reinstall. The MSB wallet address is displayed at startup as `MSB Address: trac1...`.
 
-**Second prompt — Peer wallet** (P2P network identity):
+**Second prompt — Peer wallet** (subnet identity, signs TX, **holds $TNK**):
 ```
 Key file was not found. How do you wish to proceed?
 [1]. Generate new keypair
@@ -76,11 +76,13 @@ Key file was not found. How do you wish to proceed?
 [3]. Import keypair from file
 Your choice(1/ 2/ 3/):
 ```
-Choose `1` to generate a new P2P identity, or `2` to restore from a mnemonic. This keypair identifies your node on the subnet.
+This keypair signs all subnet transactions (type 12). The `trac1...` address derived from this keypair is the one **debited 0.03 $TNK per TX**. If you already have $TNK on a Trac address, you **must** restore that seed here (option `2`) — otherwise your funds will be on a different address and TX will fail. The Peer wallet address is displayed at startup as `Peer trac address: trac1...`.
 
-Back up both seed phrases. Keypairs are saved at `stores/<peer-store-name>/db/keypair.json` and loaded silently on all subsequent runs. Once imported, the peer signs transactions automatically — the AI agent never has access to private keys.
+> **Which wallet needs $TNK?** The **Peer wallet** (2nd prompt). Subnet TX fees (0.03 $TNK each) are charged to the address derived from the Peer wallet's public key. The MSB wallet (1st prompt) is only a network identity — it does not pay fees.
 
-> **Security:** Seed phrases control the wallet's $TNK balance and identity. The human must store them securely and **never share them with the AI agent**. The agent only needs the pubkey (public, safe to share) to operate.
+Back up the Peer wallet seed phrase carefully — it controls your $TNK balance. The MSB seed is less critical (can be regenerated). Keypairs are saved at `stores/<msb-store-name>/db/keypair.json` and `stores/<peer-store-name>/db/keypair.json`, loaded silently on all subsequent runs. Once imported, the peer signs transactions automatically — the AI agent never has access to private keys.
+
+> **Security:** The Peer wallet seed phrase controls the wallet's $TNK balance and signing authority. The human must store it securely and **never share it with the AI agent**. The agent only needs the pubkey (public, safe to share) to operate.
 
 **4. Human completes wallet setup in the new terminal, then confirms the peer is running.** The agent can now connect.
 
@@ -100,7 +102,7 @@ The human can also run `/getKeys` in the peer terminal at any time.
 ### Prerequisites
 - **Node.js >= 22** (22.x or 23.x; avoid 24.x)
 - **Pear Runtime** (see step 2 above)
-- **$TNK balance** for contract transactions (0.03 $TNK per TX) and paid memory reads
+- **$TNK balance on the Peer wallet** (2nd prompt) for contract transactions (0.03 $TNK per TX) and paid memory reads
 - **Writer permission** (optional) — the admin must `/add_writer --key <your-writer-key>` for you to submit on-chain TXs. Sidechannel `memory_write` works without writer permission
 
 ---
@@ -619,6 +621,13 @@ If you skip this, the new peer may fail to acquire the Autobase lock or show une
 
 ### Port already in use
 If `pear run` starts but SC-Bridge fails with `EADDRINUSE`, another process (possibly a previous peer) is still bound to the port. Kill it or choose a different port via `--sc-bridge-port`.
+
+### TX dropped / "insufficient balance" despite funded wallet
+Your $TNK are probably on the **MSB wallet** address (1st prompt) instead of the **Peer wallet** address (2nd prompt). Subnet TX fees are charged to the `trac1...` address derived from the Peer wallet's public key. Check both addresses:
+- `MSB Address: trac1...` — shown at startup (1st block). This is **not** used for TX fees.
+- `Peer trac address: trac1...` — shown at startup (2nd block). This **is** debited for each TX.
+
+Transfer your $TNK to the Peer trac address, or re-run the peer with a fresh store and restore your funded seed at the **2nd prompt** (Peer wallet).
 
 ### "Peer is not writable" / append() silent failure
 Your peer hasn't been authorized as a writer on the Autobase. Ask the admin to run `/add_writer --key <your-writer-key>` (the writer key shown at startup, NOT your wallet pubkey). Sidechannel `memory_write` works without writer permission — only on-chain TX commands require it.
