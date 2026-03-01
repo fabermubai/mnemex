@@ -290,7 +290,7 @@ Not found:
 }
 ```
 
-**Fee:** 0.03 $TNK (`"30000000000000000"` in 18-decimal bigint string). Split depends on memory access type — see fee schedule below.
+**Fee:** 0.03 $TNK Mnemex fee + 0.06 $TNK network fees (2 transfers) = **0.09 $TNK total** for open memories. Split depends on access type — see fee schedule below.
 
 ---
 
@@ -399,7 +399,7 @@ Not found:
 }
 ```
 
-**Fee:** set by skill creator (in `price` field). Split: 80% skill creator, 20% Memory Nodes.
+**Fee:** set by skill creator (in `price` field) + 0.06 $TNK network fees (2 transfers). Split: 80% skill creator, 20% Memory Nodes.
 
 ---
 
@@ -467,14 +467,16 @@ Start the Memory Node with `--require-payment true`.
 
 **Fee schedule:**
 
-| Operation | Total Fee | Creator Share | Node Share |
-|-----------|-----------|---------------|------------|
-| Open memory read | 0.03 $TNK | 60% | 40% |
-| Gated memory read | Creator sets price | 70% | 30% |
-| Skill download | Creator sets price | 80% | 20% |
-| Memory write | Free | — | — |
-| Skill publish | Free | — | — |
-| Skill catalog | Free | — | — |
+Each paid operation requires 2 direct MSB transfers (agent → creator + agent → node). Each transfer costs 0.03 $TNK in network fees.
+
+| Operation | Mnemex Fee | Creator (%) | Creator (amount) | Node (%) | Node (amount) | Network Fees (2 TX) | Total Agent Cost |
+|---|---|---|---|---|---|---|---|
+| Open memory read | 0.03 $TNK | 60% | 0.018 $TNK | 40% | 0.012 $TNK | 0.06 $TNK | **0.09 $TNK** |
+| Gated memory read | set by creator | 70% | 70% of price | 30% | 30% of price | 0.06 $TNK | price + 0.06 $TNK |
+| Skill download | set by creator | 80% | 80% of price | 20% | 20% of price | 0.06 $TNK | price + 0.06 $TNK |
+| Memory write | Free | — | — | — | — | 0 | **Free** |
+| Skill publish | Free | — | — | — | — | 0 | **Free** |
+| Skill catalog | Free | — | — | — | — | 0 | **Free** |
 
 All amounts in 18-decimal bigint strings: 0.03 $TNK = `"30000000000000000"`.
 
@@ -552,6 +554,7 @@ import json, asyncio, websockets
 # Replace "mytoken" with the value you set via --sc-bridge-token
 async def write_memory():
     async with websockets.connect("ws://127.0.0.1:49222") as ws:
+        await ws.recv()  # hello (server sends immediately on connect)
         await ws.send(json.dumps({"type": "auth", "token": "mytoken"}))
         await ws.recv()  # auth_ok
 
@@ -581,9 +584,11 @@ import WebSocket from 'ws';
 // Connects to YOUR OWN peer's SC-Bridge (not a remote node)
 // Replace 'mytoken' with the value you set via --sc-bridge-token
 const ws = new WebSocket('ws://127.0.0.1:49222');
-ws.on('open', () => ws.send(JSON.stringify({ type: 'auth', token: 'mytoken' })));
 ws.on('message', (d) => {
     const msg = JSON.parse(d.toString());
+    if (msg.type === 'hello') {
+        ws.send(JSON.stringify({ type: 'auth', token: 'mytoken' }));
+    }
     if (msg.type === 'auth_ok') {
         ws.send(JSON.stringify({ type: 'subscribe', channels: ['cortex-crypto'] }));
         ws.send(JSON.stringify({

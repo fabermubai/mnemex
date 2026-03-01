@@ -106,16 +106,20 @@ Neurominer                    Memory Node                    MSB
 
 #### Memory Read (Agent consomme)
 1. Agent envoie `memory_read` sur le sidechannel
-2. Le Memory Node répond avec les données
-3. Le fee (0.03 $TNK) est payé via MSB
-4. Le contrat enregistre la consultation pour tracking des royalties
-5. Distribution : 60% créateur, 40% Memory Nodes
+2. Le Memory Node répond avec `payment_required` (montant, split, adresses)
+3. L'agent fait 2 transferts MSB directs : `creator_share` au creator + `node_share` au node
+4. L'agent renvoie `memory_read` avec les 2 txids
+5. Le Memory Node vérifie les txids sur le MSB, sert les données
+6. Le contrat enregistre le fee via `record_fee` (comptabilité)
+7. Coût total : prix Mnemex + 0.06 $TNK frais réseau (2 transferts × 0.03)
 
 #### Skill Download
 1. Agent envoie `skill_request` sur le sidechannel
-2. Le Memory Node vérifie le paiement MSB
-3. Le Skill package est envoyé via sidechannel (ou P2P direct)
-4. Distribution : 80% créateur, 20% Memory Nodes
+2. Le Memory Node répond avec `payment_required` (prix, split, adresses)
+3. L'agent fait 2 transferts MSB directs : `creator_share` au creator + `node_share` au node
+4. L'agent renvoie `skill_request` avec les 2 txids
+5. Le Memory Node vérifie, livre le package
+6. Distribution : 80% créateur, 20% Memory Nodes
 
 ### 3.4 Contract Mnemex
 
@@ -220,32 +224,44 @@ Format de message standardisé :
 
 ### 3.6 Fee Flow via MSB
 
-Le MSB gère les transferts TNK. Le flux pour un Memory Read :
+Le MSB gère les transferts TNK. Chaque opération payante implique **2 transferts directs** (agent → creator + agent → node), chacun coûtant 0.03 $TNK de frais réseau MSB. Ce modèle est trustless et immédiat : le creator et le node reçoivent leur part sans intermédiaire.
 
 ```
 Agent                     Memory Node                      MSB
   |                            |                            |
   |-- memory_read request ---->|                            |
   |                            |                            |
-  |<-- quote: 0.06 TNK -------|                            |
+  |<-- payment_required -------|                            |
+  |   (creator_share,          |                            |
+  |    node_share,             |                            |
+  |    pay_to_creator,         |                            |
+  |    pay_to_node)            |                            |
   |                            |                            |
-  |-- TNK transfer (0.06) ---------------------------->|   |
-  |   (to: Mnemex protocol    |                        |   |
-  |    address)                |                        |   |
-  |                            |                        |   |
-  |                            |<-- tx confirmed -------|   |
+  |-- TNK transfer #1 (creator_share) -------> creator     |
+  |   (frais réseau: 0.03 TNK)                              |
   |                            |                            |
+  |-- TNK transfer #2 (node_share) ---------> node         |
+  |   (frais réseau: 0.03 TNK)                              |
+  |                            |                            |
+  |-- memory_read + txids ---->|                            |
+  |                            |-- verify txids on MSB ---->|
+  |                            |<-- confirmed --------------|
   |<-- memory data ------------|                            |
-  |                            |                            |
-  |                            |-- distribute fees:         |
-  |                            |   0.03 → Trac network      |
-  |                            |   0.018 → creator (60%)    |
-  |                            |   0.012 → node pool (40%)  |
 ```
 
-Note : la distribution créateur/nodes peut être batch (pas besoin d'une TX MSB par query).
-Un système de "balance interne" dans le contrat Mnemex accumule les fees et les distribue
-périodiquement, réduisant le nombre de TX MSB.
+#### Grille tarifaire
+
+| Opération | Prix Mnemex | Creator (%) | Creator (montant) | Node (%) | Node (montant) | Frais réseau (2 TX) | Coût total agent |
+|---|---|---|---|---|---|---|---|
+| Open Memory Read | 0.03 $TNK | 60% | 0.018 $TNK | 40% | 0.012 $TNK | 0.06 $TNK | **0.09 $TNK** |
+| Gated Memory Read | fixé par creator | 70% | 70% du prix | 30% | 30% du prix | 0.06 $TNK | prix + 0.06 $TNK |
+| Skill Download | fixé par creator | 80% | 80% du prix | 20% | 20% du prix | 0.06 $TNK | prix + 0.06 $TNK |
+| Memory Write | Gratuit | — | — | — | — | 0 | **0** |
+| Skill Publish | Gratuit | — | — | — | — | 0 | **0** |
+
+Tous les montants en bigint 18 décimales : 0.03 $TNK = `"30000000000000000"`.
+
+Le contrat Mnemex enregistre chaque fee via `record_fee` pour le suivi comptable (balances, stats). Les paiements TNK eux-mêmes sont des transferts MSB directs — pas de batch, pas de claim.
 
 ---
 
@@ -324,11 +340,11 @@ mnemex-validator-guide.md
 
 ## 6. Questions ouvertes
 
-1. **Paiement atomique** : comment garantir que l'agent paie AVANT de recevoir les données ?
-   → Option : HTLC-style comme intercom-swap, ou paiement MSB + preuve de paiement
+1. **Paiement atomique** : ~~comment garantir que l'agent paie AVANT de recevoir les données ?~~
+   → RÉSOLU : l'agent fait 2 transferts MSB directs (creator + node), envoie les txids, le Memory Node vérifie avant de servir.
 
-2. **Batch fee distribution** : le contrat accumule et distribue périodiquement ?
-   → Semble optimal pour éviter le spam de TX MSB
+2. **Batch fee distribution** : ~~le contrat accumule et distribue périodiquement ?~~
+   → RÉSOLU : pas de batch. 2 paiements directs par opération (trustless, immédiat). Le contrat track les fees pour la comptabilité uniquement.
 
 3. **Stockage mémoire** : SQLite suffisant pour le MVP ?
    → Oui, migration possible vers LevelDB/RocksDB si besoin de scale

@@ -8,11 +8,15 @@
 - **Actual TNK payouts** happen via separate MSB transfers (batch, periodic)
 - The Memory Node **verifies payment on MSB** before serving data
 
-**Fee structure (from whitepaper):**
-- Open Memory Read: 0.06 $TNK total (0.03 Trac network fee + 0.03 Mnemex fee)
-- Mnemex fee distribution: 60% creator, 40% Memory Nodes
-- Gated Memory: creator sets price, 70% creator / 30% Memory Nodes
-- Skill Download: creator sets price, 80% creator / 20% Memory Nodes
+**Fee structure:**
+Each paid operation requires 2 MSB transfers (agent → creator + agent → node), each costing 0.03 $TNK network fee.
+
+| Operation | Mnemex Fee | Creator | Node | Network Fees (2 TX) | Total Agent Cost |
+|---|---|---|---|---|---|
+| Open Memory Read | 0.03 $TNK | 60% (0.018) | 40% (0.012) | 0.06 $TNK | **0.09 $TNK** |
+| Gated Memory Read | creator sets price | 70% | 30% | 0.06 $TNK | price + 0.06 $TNK |
+| Skill Download | creator sets price | 80% | 20% | 0.06 $TNK | price + 0.06 $TNK |
+
 - All amounts in smallest unit: 1 $TNK = 1_000_000_000_000_000_000 (18 decimals)
 - 0.03 $TNK = "30000000000000000" in bigint string
 

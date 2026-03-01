@@ -222,16 +222,19 @@ Create a `test/memory-flow.test.js`:
 **Goal:** Add the economic layer — agents pay TNK to read memories, creators earn revenue, Memory Nodes take a cut. This transforms the MVP into a real protocol with incentives.
 
 **CRITICAL CONSTRAINT:** Contract TXs (MSB type 12) CANNOT transfer TNK. They have no `to`/`amount` fields. Therefore:
-- TNK payments happen as **regular MSB transfers** (agent → Mnemex protocol address)
-- The **contract tracks accounting** (who earned what, internal balances)
-- **Actual TNK payouts** happen via separate MSB transfers (batch, periodic)
-- The Memory Node **verifies payment on MSB** before serving data
+- TNK payments happen as **2 direct MSB transfers** per operation (agent → creator + agent → node)
+- Each MSB transfer costs 0.03 $TNK in network fees
+- The **contract tracks accounting** via `record_fee` (balances, stats)
+- The Memory Node **verifies payment txids on MSB** before serving data
 
-**Fee structure (from whitepaper):**
-- Open Memory Read: 0.06 $TNK total (0.03 Trac network fee + 0.03 Mnemex fee)
-- Mnemex fee distribution: 60% creator, 40% Memory Nodes
-- Gated Memory: creator sets price, 70% creator / 30% Memory Nodes
-- Skill Download: creator sets price, 80% creator / 20% Memory Nodes
+**Fee structure:**
+
+| Operation | Mnemex Fee | Creator | Node | Network Fees (2 TX) | Total Agent Cost |
+|---|---|---|---|---|---|
+| Open Memory Read | 0.03 $TNK | 60% (0.018) | 40% (0.012) | 0.06 $TNK | **0.09 $TNK** |
+| Gated Memory Read | creator sets price | 70% | 30% | 0.06 $TNK | price + 0.06 $TNK |
+| Skill Download | creator sets price | 80% | 20% | 0.06 $TNK | price + 0.06 $TNK |
+
 - All amounts in smallest unit: 1 $TNK = 1_000_000_000_000_000_000 (18 decimals)
 - 0.03 $TNK = "30000000000000000" in bigint string
 
