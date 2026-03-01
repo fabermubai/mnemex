@@ -1,5 +1,5 @@
 import {Protocol} from "trac-peer";
-import { bufferToBigInt, bigIntToDecimalString } from "trac-msb/src/utils/amountSerialization.js";
+import { bufferToBigInt, bigIntToDecimalString, decimalStringToBigInt } from "trac-msb/src/utils/amountSerialization.js";
 import { sendTNK } from "../src/fees/tnk-transfer.js";
 import b4a from "b4a";
 import PeerWallet from "trac-wallet";
@@ -945,9 +945,14 @@ class MnemexProtocol extends Protocol{
                 return;
             }
             try {
+                const amountBigint = String(decimalStringToBigInt(amount));
                 console.log('Sending', amount, 'TNK to', to, '...');
-                const result = await rawMsb.handleCommand('/transfer ' + to + ' ' + amount);
-                console.log('Transfer result:', result);
+                const result = await sendTNK(rawMsb, to, amountBigint, this.peer.wallet);
+                if (result.success) {
+                    console.log('Transfer sent. TxHash:', result.txHash);
+                } else {
+                    console.log('Transfer failed:', result.error);
+                }
             } catch (err) {
                 console.log('Transfer error:', err?.message ?? String(err));
             }
