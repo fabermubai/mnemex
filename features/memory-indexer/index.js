@@ -267,6 +267,20 @@ export class MemoryIndexer extends Feature {
     }
 
     /**
+     * Send a response to the requester.
+     * If replyFn is provided (SC-Bridge path), call it directly.
+     * Otherwise broadcast on the sidechannel (P2P path).
+     */
+    _respond(channel, response, replyFn) {
+        const data = JSON.stringify(response);
+        if (replyFn) {
+            replyFn(data);
+        } else if (this.peer.sidechannel) {
+            this.peer.sidechannel.broadcast(channel, data);
+        }
+    }
+
+    /**
      * Process a memory_read message — immediate fee split flow:
      *
      * 1. Look up the data locally
@@ -278,8 +292,9 @@ export class MemoryIndexer extends Feature {
      *
      * @param channel
      * @param msg
+     * @param replyFn — optional callback(dataStr) for direct reply (SC-Bridge)
      */
-    async _handleMemoryRead(channel, msg) {
+    async _handleMemoryRead(channel, msg, replyFn) {
         const { memory_id, payment_txid_creator, payment_txid_node } = msg;
 
         if (!memory_id) {
@@ -298,10 +313,8 @@ export class MemoryIndexer extends Feature {
                 found: false,
                 data: null
             };
-            if (this.peer.sidechannel) {
-                this.peer.sidechannel.broadcast(channel, JSON.stringify(response));
-                console.log('MemoryIndexer: memory_read response for', memory_id, '— found: false');
-            }
+            this._respond(channel, response, replyFn);
+            console.log('MemoryIndexer: memory_read response for', memory_id, '— found: false');
             return;
         }
 
@@ -325,10 +338,8 @@ export class MemoryIndexer extends Feature {
                 pay_to_node: this.nodeAddress,
                 ts: Date.now()
             };
-            if (this.peer.sidechannel) {
-                this.peer.sidechannel.broadcast(channel, JSON.stringify(response));
-                console.log('MemoryIndexer: payment_required for', memory_id);
-            }
+            this._respond(channel, response, replyFn);
+            console.log('MemoryIndexer: payment_required for', memory_id);
             return;
         }
 
@@ -344,10 +355,8 @@ export class MemoryIndexer extends Feature {
                     which: 'creator',
                     ts: Date.now()
                 };
-                if (this.peer.sidechannel) {
-                    this.peer.sidechannel.broadcast(channel, JSON.stringify(response));
-                    console.log('MemoryIndexer: payment_not_confirmed (creator) for', memory_id, '— txid:', payment_txid_creator);
-                }
+                this._respond(channel, response, replyFn);
+                console.log('MemoryIndexer: payment_not_confirmed (creator) for', memory_id, '— txid:', payment_txid_creator);
                 return;
             }
 
@@ -361,10 +370,8 @@ export class MemoryIndexer extends Feature {
                     which: 'node',
                     ts: Date.now()
                 };
-                if (this.peer.sidechannel) {
-                    this.peer.sidechannel.broadcast(channel, JSON.stringify(response));
-                    console.log('MemoryIndexer: payment_not_confirmed (node) for', memory_id, '— txid:', payment_txid_node);
-                }
+                this._respond(channel, response, replyFn);
+                console.log('MemoryIndexer: payment_not_confirmed (node) for', memory_id, '— txid:', payment_txid_node);
                 return;
             }
         }
@@ -383,10 +390,8 @@ export class MemoryIndexer extends Feature {
             fee_recorded: hasPayment
         };
 
-        if (this.peer.sidechannel) {
-            this.peer.sidechannel.broadcast(channel, JSON.stringify(response));
-            console.log('MemoryIndexer: memory_read response for', memory_id, '— found: true');
-        }
+        this._respond(channel, response, replyFn);
+        console.log('MemoryIndexer: memory_read response for', memory_id, '— found: true');
 
         // Record fee in contract if payment was provided
         if (hasPayment) {
@@ -608,35 +613,32 @@ export class MemoryIndexer extends Feature {
      *
      * @param channel
      * @param msg — { v, type, query, cortex?, author? }
+     * @param replyFn — optional callback(dataStr) for direct reply (SC-Bridge)
      */
-    async _handleMemorySearch(channel, msg) {
+    async _handleMemorySearch(channel, msg, replyFn) {
         const query = typeof msg.query === 'string' ? msg.query.trim().toLowerCase() : '';
         const cortexFilter = msg.cortex || null;
         const authorFilter = msg.author || null;
         const limit = Number.isInteger(msg.limit) && msg.limit > 0 ? Math.min(msg.limit, 50) : 20;
 
         if (!query) {
-            if (this.peer.sidechannel) {
-                this.peer.sidechannel.broadcast(channel, JSON.stringify({
-                    v: 1,
-                    type: 'memory_search_response',
-                    query: '',
-                    results: [],
-                    total: 0,
-                    ts: Date.now()
-                }));
-            }
+            this._respond(channel, {
+                v: 1,
+                type: 'memory_search_response',
+                query: '',
+                results: [],
+                total: 0,
+                ts: Date.now()
+            }, replyFn);
             return;
         }
 
         const results = [];
         if (!fs.existsSync(this.dataDir)) {
-            if (this.peer.sidechannel) {
-                this.peer.sidechannel.broadcast(channel, JSON.stringify({
-                    v: 1, type: 'memory_search_response', query: msg.query,
-                    results: [], total: 0, ts: Date.now()
-                }));
-            }
+            this._respond(channel, {
+                v: 1, type: 'memory_search_response', query: msg.query,
+                results: [], total: 0, ts: Date.now()
+            }, replyFn);
             return;
         }
 
@@ -690,10 +692,8 @@ export class MemoryIndexer extends Feature {
             ts: Date.now()
         };
 
-        if (this.peer.sidechannel) {
-            this.peer.sidechannel.broadcast(channel, JSON.stringify(response));
-            console.log('MemoryIndexer: memory_search "' + msg.query + '" —', results.length, 'results');
-        }
+        this._respond(channel, response, replyFn);
+        console.log('MemoryIndexer: memory_search "' + msg.query + '" —', results.length, 'results');
     }
 
     /**
@@ -702,8 +702,9 @@ export class MemoryIndexer extends Feature {
      *
      * @param channel
      * @param msg — { v, type, cortex?, author?, limit? }
+     * @param replyFn — optional callback(dataStr) for direct reply (SC-Bridge)
      */
-    async _handleMemoryList(channel, msg) {
+    async _handleMemoryList(channel, msg, replyFn) {
         const cortexFilter = msg.cortex || null;
         const authorFilter = msg.author || null;
         const limit = Number.isInteger(msg.limit) && msg.limit > 0 ? Math.min(msg.limit, 100) : 20;
@@ -740,10 +741,8 @@ export class MemoryIndexer extends Feature {
             ts: Date.now()
         };
 
-        if (this.peer.sidechannel) {
-            this.peer.sidechannel.broadcast(channel, JSON.stringify(response));
-            console.log('MemoryIndexer: memory_list —', memories.length, 'memories');
-        }
+        this._respond(channel, response, replyFn);
+        console.log('MemoryIndexer: memory_list —', memories.length, 'memories');
     }
 
     /**
@@ -753,19 +752,18 @@ export class MemoryIndexer extends Feature {
      *
      * @param channel
      * @param msg — { v, type, query, cortex? }
+     * @param replyFn — optional callback(dataStr) for direct reply (SC-Bridge)
      */
-    async _handleSkillSearch(channel, msg) {
+    async _handleSkillSearch(channel, msg, replyFn) {
         const query = typeof msg.query === 'string' ? msg.query.trim().toLowerCase() : '';
         const cortexFilter = msg.cortex || null;
         const limit = Number.isInteger(msg.limit) && msg.limit > 0 ? Math.min(msg.limit, 50) : 20;
 
         if (!query) {
-            if (this.peer.sidechannel) {
-                this.peer.sidechannel.broadcast(channel, JSON.stringify({
-                    v: 1, type: 'skill_search_response', query: '',
-                    results: [], total: 0, ts: Date.now()
-                }));
-            }
+            this._respond(channel, {
+                v: 1, type: 'skill_search_response', query: '',
+                results: [], total: 0, ts: Date.now()
+            }, replyFn);
             return;
         }
 
@@ -807,10 +805,8 @@ export class MemoryIndexer extends Feature {
             ts: Date.now()
         };
 
-        if (this.peer.sidechannel) {
-            this.peer.sidechannel.broadcast(channel, JSON.stringify(response));
-            console.log('MemoryIndexer: skill_search "' + msg.query + '" —', results.length, 'results');
-        }
+        this._respond(channel, response, replyFn);
+        console.log('MemoryIndexer: skill_search "' + msg.query + '" —', results.length, 'results');
     }
 }
 
