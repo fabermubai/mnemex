@@ -619,7 +619,8 @@ export class MemoryIndexer extends Feature {
      * @param msg
      */
     async _handleSkillRequest(channel, msg) {
-        const { skill_id, payment_txid } = msg;
+        const { skill_id, payment_txid_creator, payment_txid_node } = msg;
+        const hasPayment = !!(payment_txid_creator && payment_txid_node);
 
         if (!skill_id) {
             console.log('MemoryIndexer: skill_request rejected — missing skill_id');
@@ -645,16 +646,26 @@ export class MemoryIndexer extends Feature {
             return;
         }
 
+        // Read stored data for fee computation
+        const raw = fs.readFileSync(filePath, 'utf8');
+        const stored = JSON.parse(raw);
+
         // Payment gate
-        if (this.requirePayment && !payment_txid) {
-            const raw = fs.readFileSync(filePath, 'utf8');
-            const stored = JSON.parse(raw);
+        if (this.requirePayment && !hasPayment) {
+            const skillPrice = stored.price || this.defaultFeeAmount;
+            const total = BigInt(skillPrice);
+            const creatorShare = (total * 80n / 100n).toString();
+            const nodeShare = (total * 20n / 100n).toString();
+            const creatorAddress = this._getCreatorAddress(stored.author);
             const response = {
                 v: 1,
                 type: 'payment_required',
                 skill_id,
-                amount: stored.price || this.defaultFeeAmount,
-                pay_to: this.nodeAddress,
+                amount: skillPrice,
+                creator_share: creatorShare,
+                node_share: nodeShare,
+                pay_to_creator: creatorAddress,
+                pay_to_node: this.nodeAddress,
                 ts: Date.now()
             };
             if (this.peer.sidechannel) {
@@ -665,8 +676,6 @@ export class MemoryIndexer extends Feature {
         }
 
         // Deliver skill package
-        const raw = fs.readFileSync(filePath, 'utf8');
-        const stored = JSON.parse(raw);
         const response = {
             v: 1,
             type: 'skill_deliver',
@@ -682,17 +691,17 @@ export class MemoryIndexer extends Feature {
         }
 
         // Record skill download in contract if payment was provided
-        if (payment_txid) {
+        if (hasPayment) {
             const buyer = msg.buyer || msg.payer || 'unknown';
             const dlEntry = {
                 skill_id: String(skill_id),
                 buyer: String(buyer),
-                payment_txid: String(payment_txid),
+                payment_txid: String(payment_txid_creator),
                 amount: stored.price || this.defaultFeeAmount
             };
             if (this.nodeAddress) dlEntry.served_by = String(this.nodeAddress);
             await this.append('record_skill_download', dlEntry);
-            console.log('MemoryIndexer: appended record_skill_download for', skill_id, '— txid:', payment_txid);
+            console.log('MemoryIndexer: appended record_skill_download for', skill_id, '— txid:', payment_txid_creator);
         }
     }
 

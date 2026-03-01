@@ -358,7 +358,8 @@ describe('Phase 3 — Skills & Multi-Cortex', () => {
                 v: 1,
                 type: 'skill_request',
                 skill_id: 'test-skill-001',
-                payment_txid: 'pay-tx-skill-001',
+                payment_txid_creator: 'pay-tx-creator-001',
+                payment_txid_node: 'pay-tx-node-001',
                 buyer: 'dd'.repeat(32),
             });
 
@@ -374,7 +375,7 @@ describe('Phase 3 — Skills & Multi-Cortex', () => {
             assert.equal(appendCalls[0].key, 'record_skill_download');
             assert.equal(appendCalls[0].value.skill_id, 'test-skill-001');
             assert.equal(appendCalls[0].value.buyer, 'dd'.repeat(32));
-            assert.equal(appendCalls[0].value.payment_txid, 'pay-tx-skill-001');
+            assert.equal(appendCalls[0].value.payment_txid, 'pay-tx-creator-001');
         });
 
         it('should handle skill_request without payment — return payment_required', async () => {
@@ -393,7 +394,10 @@ describe('Phase 3 — Skills & Multi-Cortex', () => {
             assert.equal(response.type, 'payment_required');
             assert.equal(response.skill_id, 'test-skill-001');
             assert.equal(response.amount, '100000000000000000'); // skill's price
-            assert.equal(response.pay_to, 'trac1testnode');
+            assert.equal(response.creator_share, '80000000000000000'); // 80%
+            assert.equal(response.node_share, '20000000000000000'); // 20%
+            assert.ok(response.pay_to_creator); // creator address
+            assert.equal(response.pay_to_node, 'trac1testnode');
 
             // No contract TX should be appended
             assert.equal(appendCalls.length, 0);

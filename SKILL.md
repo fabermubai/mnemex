@@ -32,11 +32,11 @@ The agent opens a new terminal window for the human. The agent has **no visibili
 
 > **SC-Bridge token:** The agent can generate a random token (e.g. `crypto.randomUUID()`) and write it into the launch script, or the human can define one manually. Both sides must use the same token.
 
-**Windows** — the agent writes a `launch-peer.bat` file then launches it (see `launch-peer.bat.example` in the repo):
+**Windows** — the agent writes a `launch-peer.bat` file then launches it:
 ```bat
 @echo off
 cd /d %~dp0
-pear run . --peer-store-name my-agent --msb-store-name my-agent-msb --subnet-channel mnemex-v1 --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0 --sc-bridge 1 --sc-bridge-token <your-secret-token> --sc-bridge-port 49222
+pear run . --peer-store-name my-agent --msb-store-name my-agent-msb --subnet-channel mnemex-v1 --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0 --sc-bridge 1 --sc-bridge-token <your-secret-token> --sc-bridge-port 49222 --sc-bridge-cli 1
 pause
 ```
 Then launch it in a separate window:
@@ -127,7 +127,18 @@ Memories are routed by cortex. Subscribe to the cortex channels relevant to your
 
 Once your peer is running with `--sc-bridge 1`, connect your agent code to **your own** `ws://127.0.0.1:<port>` (default port: `49222`, configurable via `--sc-bridge-port`).
 
-**Authentication (first message after connect):**
+**On connect, the server sends a `hello` message immediately:**
+```json
+{
+  "type": "hello",
+  "peer": "<peer-pubkey-hex-64>",
+  "address": "trac1...",
+  "entryChannel": "0000mnemex",
+  "requiresAuth": true
+}
+```
+
+**Authentication (first message you send):**
 ```json
 { "type": "auth", "token": "<your-secret-token>" }
 ```
@@ -142,8 +153,9 @@ Response: `{ "type": "auth_ok" }`.
 ```json
 { "type": "send", "channel": "cortex-crypto", "message": "<json-string>" }
 ```
+Response: `{ "type": "sent" }` — confirms the message was broadcast. Note: `broadcast()` is remote-only, so your own peer will NOT receive this message as a `sidechannel_message`.
 
-Incoming messages arrive as `type: "sidechannel_message"` with `channel`, `from`, `message` fields.
+Incoming messages from other peers arrive as `type: "sidechannel_message"` with `channel`, `from`, `message` fields.
 
 ---
 
@@ -240,7 +252,7 @@ Memory found (free or payment accepted):
 }
 ```
 
-Payment required:
+Payment required (amounts vary by access type — example shows gated 70/30 split):
 ```json
 {
   "v": 1,
@@ -251,6 +263,18 @@ Payment required:
   "node_share": "9000000000000000",
   "pay_to_creator": "<creator-trac-address>",
   "pay_to_node": "<node-trac-address>",
+  "ts": 1708617600000
+}
+```
+
+Payment not confirmed (retry after ~10 seconds):
+```json
+{
+  "v": 1,
+  "type": "payment_not_confirmed",
+  "memory_id": "unique-id",
+  "payment_txid": "<the-txid-that-was-not-yet-confirmed>",
+  "which": "creator",
   "ts": 1708617600000
 }
 ```
@@ -266,7 +290,7 @@ Not found:
 }
 ```
 
-**Fee:** 0.03 $TNK (`"30000000000000000"` in 18-decimal bigint string). Split: 60% memory creator, 40% Memory Nodes.
+**Fee:** 0.03 $TNK (`"30000000000000000"` in 18-decimal bigint string). Split depends on memory access type — see fee schedule below.
 
 ---
 
@@ -438,7 +462,8 @@ Start the Memory Node with `--require-payment true`.
 3. Transfer `creator_share` TNK to `pay_to_creator` via MSB (regular transfer, not contract TX)
 4. Transfer `node_share` TNK to `pay_to_node` via MSB
 5. Resend `memory_read` with both MSB transaction hashes as `payment_txid_creator` and `payment_txid_node`
-6. Receive `memory_response` with data
+6. If you receive `payment_not_confirmed` — the MSB hasn't confirmed the txid yet. Wait ~10 seconds and retry step 5
+7. Receive `memory_response` with data
 
 **Fee schedule:**
 
@@ -498,6 +523,10 @@ Full Intercom sidechannel flags (PoW, invites, welcome, owner) are also supporte
 | `/connections` | Show connected peers |
 | `/sc_stats` | Sidechannel stats (channels, connection count) |
 | `/msb` | MSB status (balance, validators) |
+
+### Transfer commands (MSB network fee per transfer)
+| Command | Description |
+|---------|-------------|
 | `/msb_transfer --to <trac1...> --amount <TNK>` | Send TNK to an address via MSB |
 
 ### Transaction commands (cost 0.03 $TNK each)
@@ -607,7 +636,7 @@ ws.on('message', (d) => {
 - Never expose SC-Bridge token. Bind to localhost only.
 
 ## Test Coverage
-83/83 tests passing (40 unit + 43 live mainnet). See `tasks/test-plan.md`.
+103 tests passing (`node --test test/*.test.js`).
 
 ## Troubleshooting
 

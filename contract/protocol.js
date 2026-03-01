@@ -147,11 +147,8 @@ class MnemexProtocol extends Protocol{
             return obj;
         }
 
-        if (json.op === 'query_memory') {
-            obj.type = 'query_memory';
-            obj.value = json;
-            return obj;
-        }
+        // query_memory is read-only — handled directly in customCommand via getSigned().
+        // Not mapped here because it does not need a TX (no state change, no MSB fee).
 
         if (json.op === 'record_fee') {
             obj.type = 'record_fee';

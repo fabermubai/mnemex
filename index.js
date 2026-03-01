@@ -13,6 +13,8 @@ import { getPearRuntime, ensureTrailingSlash } from 'trac-peer/src/runnerArgs.js
 import { Terminal } from 'trac-peer/src/terminal/index.js';
 import MnemexProtocol from './contract/protocol.js';
 import MnemexContract from './contract/contract.js';
+import { sendTNK } from './src/fees/tnk-transfer.js';
+import { decimalStringToBigInt } from 'trac-msb/src/utils/amountSerialization.js';
 import { Timer } from './features/timer/index.js';
 import { MemoryIndexer } from './features/memory-indexer/index.js';
 import Sidechannel from './features/sidechannel/index.js';
@@ -736,8 +738,13 @@ if (scBridge) {
         if (!rawMsb) { sendError('MSB not available.'); return; }
         (async () => {
           try {
-            const result = await rawMsb.handleCommand('/transfer ' + to + ' ' + amount);
-            reply({ type: 'msb_transfer_ok', to, amount, result: result ?? null });
+            const amountBigint = String(decimalStringToBigInt(amount));
+            const result = await sendTNK(rawMsb, to, amountBigint, peer.wallet);
+            if (result.success) {
+              reply({ type: 'msb_transfer_ok', to, amount, txHash: result.txHash });
+            } else {
+              sendError(result.error || 'Transfer failed');
+            }
           } catch (err) {
             sendError(err?.message ?? String(err));
           }
