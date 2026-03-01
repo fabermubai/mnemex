@@ -446,6 +446,7 @@ const peer = new Peer({
   contract: MnemexContract,
 });
 await peer.ready();
+peer._msb = msb;
 
 const effectiveSubnetBootstrapHex = peer.base?.key
   ? peer.base.key.toString('hex')
@@ -742,6 +743,26 @@ if (scBridge) {
           limit: message.limit
         }).catch((err) => sendError(err?.message ?? String(err)))
           .finally(() => { memoryIndexer.peer.sidechannel = origSc3; });
+        return;
+      }
+
+      /* ── msb_transfer ─────────────────────────────────────────────────
+       * Send a TNK transfer via the MSB.
+       * ─────────────────────────────────────────────────────────────── */
+      case 'msb_transfer': {
+        const to = message.to;
+        const amount = message.amount;
+        if (!to || !amount) { sendError('Missing to or amount.'); return; }
+        const rawMsb = peer._msb;
+        if (!rawMsb) { sendError('MSB not available.'); return; }
+        (async () => {
+          try {
+            const result = await rawMsb.handleCommand('/transfer ' + to + ' ' + amount);
+            reply({ type: 'msb_transfer_ok', to, amount, result: result ?? null });
+          } catch (err) {
+            sendError(err?.message ?? String(err));
+          }
+        })();
         return;
       }
 

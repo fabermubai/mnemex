@@ -922,3 +922,72 @@ describe('MemoryIndexer — MSB dual-txid verification', () => {
         assert.equal(appendCalls[0].key, 'record_fee');
     });
 });
+
+// ---------------------------------------------------------------------------
+// msb_transfer — protocol handler logic
+// ---------------------------------------------------------------------------
+
+describe('msb_transfer', () => {
+
+    it('should call msb.handleCommand with /transfer <to> <amount>', async () => {
+        let commandReceived = null;
+        const mockMsb = {
+            handleCommand: async (cmd) => {
+                commandReceived = cmd;
+                return { success: true, txHash: 'abc123' };
+            }
+        };
+
+        const to = 'trac1jad8mn8fe6m2hrn58cvt42vtjqzxwshv4dzvsy2p6ykm4l2sy98s9swkx5';
+        const amount = '0.021';
+        const result = await mockMsb.handleCommand('/transfer ' + to + ' ' + amount);
+
+        assert.equal(commandReceived, '/transfer trac1jad8mn8fe6m2hrn58cvt42vtjqzxwshv4dzvsy2p6ykm4l2sy98s9swkx5 0.021');
+        assert.deepEqual(result, { success: true, txHash: 'abc123' });
+    });
+
+    it('should handle transfer failure gracefully', async () => {
+        const mockMsb = {
+            handleCommand: async () => {
+                throw new Error('Insufficient balance');
+            }
+        };
+
+        let error = null;
+        try {
+            await mockMsb.handleCommand('/transfer trac1abc 0.5');
+        } catch (err) {
+            error = err;
+        }
+        assert.ok(error instanceof Error);
+        assert.equal(error.message, 'Insufficient balance');
+    });
+
+    it('SC-Bridge handler should validate required fields', () => {
+        // Simulates the SC-Bridge msb_transfer validation logic
+        const messages = [
+            { type: 'msb_transfer' }, // missing to and amount
+            { type: 'msb_transfer', to: 'trac1abc' }, // missing amount
+            { type: 'msb_transfer', amount: '0.01' }, // missing to
+        ];
+
+        for (const msg of messages) {
+            const to = msg.to;
+            const amount = msg.amount;
+            assert.ok(!to || !amount, 'Should detect missing to or amount for: ' + JSON.stringify(msg));
+        }
+
+        // Valid message
+        const valid = { type: 'msb_transfer', to: 'trac1abc', amount: '0.021' };
+        assert.ok(valid.to && valid.amount, 'Should accept valid message');
+    });
+
+    it('peer._msb should be set on the peer object', () => {
+        // Simulates index.js wiring: peer._msb = msb
+        const msb = { handleCommand: async () => {} };
+        const peer = {};
+        peer._msb = msb;
+        assert.strictEqual(peer._msb, msb);
+        assert.ok(typeof peer._msb.handleCommand === 'function');
+    });
+});

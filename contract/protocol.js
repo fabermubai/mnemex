@@ -250,6 +250,7 @@ class MnemexProtocol extends Protocol{
         console.log(' ');
         console.log('- System Commands:');
         console.log('- /get --key "<key>" [--confirmed true|false] | reads subnet state key (confirmed defaults to true).');
+        console.log('- /msb_transfer --to "<trac1...>" --amount "<TNK>" | send TNK to an address via MSB.');
         console.log('- /msb | prints MSB txv + lengths (local MSB node view).');
         console.log('- /print --text "<message>" | print text to terminal.');
         console.log('- /sc_join --channel "<name>" | join an ephemeral sidechannel.');
@@ -791,6 +792,28 @@ class MnemexProtocol extends Protocol{
             const confirmed = unconfirmedMatch ? false : confirmedMatch ? confirmedMatch[1] === "true" || confirmedMatch[1] === "1" : true;
             const v = confirmed ? await this.getSigned(key) : await this.get(key);
             console.log(v);
+            return;
+        }
+        if (this.input.startsWith("/msb_transfer")) {
+            const args = this.parseArgs(input);
+            const to = args.to || args.address;
+            const amount = args.amount;
+            if (!to || !amount) {
+                console.log('Usage: /msb_transfer --to "<trac1...>" --amount "<TNK amount>"');
+                return;
+            }
+            const rawMsb = this.peer._msb;
+            if (!rawMsb) {
+                console.log('Error: MSB instance not available.');
+                return;
+            }
+            try {
+                console.log('Sending', amount, 'TNK to', to, '...');
+                const result = await rawMsb.handleCommand('/transfer ' + to + ' ' + amount);
+                console.log('Transfer result:', result);
+            } catch (err) {
+                console.log('Transfer error:', err?.message ?? String(err));
+            }
             return;
         }
         if (this.input.startsWith("/msb")) {
