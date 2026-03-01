@@ -524,6 +524,7 @@ const memoryIndexer = new MemoryIndexer(peer, {
   msb: msb,
 });
 await peer.protocol.instance.addFeature('memory_indexer', memoryIndexer);
+peer._memoryIndexer = memoryIndexer;
 memoryIndexer.start().catch((err) => console.error('MemoryIndexer feature stopped:', err?.message ?? err));
 
 let scBridge = null;
@@ -855,7 +856,7 @@ sidechannel
   });
 
 const terminal = new Terminal(peer);
-await terminal.start();
+peer._rl = await terminal.start();
 
 /* ── Auto-add writers ─────────────────────────────────────────────────────
  * Mnemex is an open network: any agent that joins the subnet should be

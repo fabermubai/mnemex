@@ -1,5 +1,6 @@
 import {Protocol} from "trac-peer";
 import { bufferToBigInt, bigIntToDecimalString } from "trac-msb/src/utils/amountSerialization.js";
+import { sendTNK } from "../src/fees/tnk-transfer.js";
 import b4a from "b4a";
 import PeerWallet from "trac-wallet";
 import fs from "fs";
@@ -83,6 +84,20 @@ const parseWelcomeArg = (raw) => {
         return JSON.parse(decoded);
     } catch (_e) {}
     return null;
+};
+
+/**
+ * Format a bigint-string amount (smallest TNK unit) to human-readable decimal.
+ * E.g. "30000000000000000" → "0.03 TNK", "21000000000000000" → "0.021 TNK"
+ */
+const _formatTNK = (amountStr) => {
+    const decimals = 18;
+    const s = String(amountStr).padStart(decimals + 1, '0');
+    const intPart = s.slice(0, s.length - decimals) || '0';
+    let fracPart = s.slice(s.length - decimals);
+    // Trim trailing zeros but keep at least 1 digit
+    fracPart = fracPart.replace(/0+$/, '') || '0';
+    return intPart + '.' + fracPart + ' TNK';
 };
 
 class MnemexProtocol extends Protocol{
@@ -201,6 +216,8 @@ class MnemexProtocol extends Protocol{
         console.log('    Register a memory entry on-chain (submits MSB TX, costs 0.03 $TNK).');
         console.log('- /query_memory --memory_id "<id>"');
         console.log('    Look up a memory entry locally (no TX, no fee).');
+        console.log('- /memory_read --memory_id "<id>" [--cortex "<channel>"]');
+        console.log('    Read memory data (local or P2P relay). Prompts for TNK payment if gated.');
         console.log('- /query_by_tag --tag "<tag>"');
         console.log('    List all memory IDs indexed under a tag (range scan, no fee).');
         console.log('- /list_by_cortex --cortex "<name>"');
@@ -347,6 +364,125 @@ class MnemexProtocol extends Protocol{
             }
             const memory = await this.getSigned('mem/' + memoryId);
             console.log('query_memory', memoryId + ':', memory);
+            return;
+        }
+
+        if (this.input.startsWith("/memory_read")) {
+            const args = this.parseArgs(input);
+            const memoryId = args.memory_id || args.id;
+            const cortex = args.cortex || 'cortex-crypto';
+            if (!memoryId) {
+                console.log('Usage: /memory_read --memory_id "<id>" [--cortex "<channel>"]');
+                return;
+            }
+            const indexer = this.peer._memoryIndexer;
+            if (!indexer) {
+                console.log('Error: MemoryIndexer not available.');
+                return;
+            }
+            const rawMsb = this.peer._msb;
+            const rl = this.peer._rl;
+
+            // Use a Promise to capture the async replyFn callback
+            const response = await new Promise((resolve) => {
+                indexer._handleMemoryRead(cortex, {
+                    v: 1,
+                    type: 'memory_read',
+                    memory_id: memoryId,
+                    payer: this.peer.wallet.publicKey,
+                }, (data) => resolve(JSON.parse(data)));
+            });
+
+            // Case 1: data found (no payment needed or payment not required)
+            if (response.found) {
+                console.log('');
+                console.log('Memory:', memoryId);
+                console.log('Cortex:', response.cortex || cortex);
+                console.log('Author:', response.author || 'unknown');
+                console.log('Data:', JSON.stringify(response.data, null, 2));
+                return;
+            }
+
+            // Case 2: payment required
+            if (response.type === 'payment_required') {
+                console.log('');
+                console.log('Payment required for memory:', memoryId);
+                console.log('  Total fee:      ', _formatTNK(response.amount));
+                console.log('  Creator share:   ', _formatTNK(response.creator_share));
+                console.log('  Node share:      ', _formatTNK(response.node_share));
+                console.log('  Pay to creator:  ', response.pay_to_creator);
+                console.log('  Pay to node:     ', response.pay_to_node);
+                console.log('');
+
+                if (!rawMsb) {
+                    console.log('Error: MSB not available — cannot send payment.');
+                    return;
+                }
+                if (!rl) {
+                    console.log('Error: readline not available — cannot prompt for confirmation.');
+                    return;
+                }
+
+                // Interactive confirmation
+                const answer = await new Promise((resolve) => {
+                    rl.question('Pay ' + _formatTNK(response.amount) + ' to read this memory? (y/N) ', (ans) => {
+                        resolve(ans.trim().toLowerCase());
+                    });
+                });
+
+                if (answer !== 'y' && answer !== 'yes') {
+                    console.log('Payment cancelled.');
+                    return;
+                }
+
+                // Send creator payment
+                console.log('Sending', _formatTNK(response.creator_share), 'to creator...');
+                const creatorResult = await sendTNK(rawMsb, response.pay_to_creator, response.creator_share);
+                if (!creatorResult.success) {
+                    console.log('Error: creator payment failed —', creatorResult.error);
+                    return;
+                }
+                console.log('Creator payment sent. TxHash:', creatorResult.txHash);
+
+                // Send node payment
+                console.log('Sending', _formatTNK(response.node_share), 'to node...');
+                const nodeResult = await sendTNK(rawMsb, response.pay_to_node, response.node_share);
+                if (!nodeResult.success) {
+                    console.log('Error: node payment failed —', nodeResult.error);
+                    console.log('Warning: creator payment was already sent (txid:', creatorResult.txHash + ')');
+                    return;
+                }
+                console.log('Node payment sent. TxHash:', nodeResult.txHash);
+
+                // Retry with payment txids
+                console.log('Retrying memory_read with payment proof...');
+                const retryResponse = await new Promise((resolve) => {
+                    indexer._handleMemoryRead(cortex, {
+                        v: 1,
+                        type: 'memory_read',
+                        memory_id: memoryId,
+                        payment_txid_creator: creatorResult.txHash,
+                        payment_txid_node: nodeResult.txHash,
+                        payer: this.peer.wallet.publicKey,
+                    }, (data) => resolve(JSON.parse(data)));
+                });
+
+                if (retryResponse.found) {
+                    console.log('');
+                    console.log('Memory:', memoryId);
+                    console.log('Cortex:', retryResponse.cortex || cortex);
+                    console.log('Author:', retryResponse.author || 'unknown');
+                    console.log('Data:', JSON.stringify(retryResponse.data, null, 2));
+                } else if (retryResponse.type === 'payment_not_confirmed') {
+                    console.log('Payment not yet confirmed on MSB (txid:', retryResponse.payment_txid + '). Try again shortly.');
+                } else {
+                    console.log('Memory not found after payment. Response:', JSON.stringify(retryResponse));
+                }
+                return;
+            }
+
+            // Case 3: not found
+            console.log('Memory not found:', memoryId);
             return;
         }
 
