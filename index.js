@@ -745,6 +745,63 @@ if (scBridge) {
         return;
       }
 
+      /* ── memory_write ─────────────────────────────────────────────────
+       * Route to local MemoryIndexer AND broadcast to network.
+       * ─────────────────────────────────────────────────────────────── */
+      case 'memory_write': {
+        const cortexW = message.cortex && memoryIndexer.cortexChannels.includes(message.cortex)
+          ? message.cortex
+          : memoryIndexer.cortexChannels[0] || 'cortex-crypto';
+        const writeMsg = {
+          v: 1,
+          type: 'memory_write',
+          memory_id: message.memory_id,
+          cortex: message.cortex || cortexW,
+          data: message.data,
+          author: message.author || peer.wallet.publicKey,
+          access: message.access || 'open',
+          ts: message.ts || Date.now(),
+          tags: message.tags || undefined,
+          sig: message.sig || undefined,
+        };
+        const origScW = memoryIndexer.peer.sidechannel;
+        memoryIndexer.peer.sidechannel = {
+          broadcast: (_ch, data) => {
+            // Also broadcast to network via real sidechannel
+            origScW.broadcast(_ch, data);
+          }
+        };
+        memoryIndexer._handleMemoryWrite(cortexW, writeMsg)
+          .then(() => reply({ type: 'memory_write_ok', memory_id: writeMsg.memory_id }))
+          .catch((err) => sendError(err?.message ?? String(err)))
+          .finally(() => { memoryIndexer.peer.sidechannel = origScW; });
+        return;
+      }
+
+      /* ── memory_read ──────────────────────────────────────────────────
+       * Route to local MemoryIndexer, reply directly to requesting client.
+       * ─────────────────────────────────────────────────────────────── */
+      case 'memory_read': {
+        const cortexR = memoryIndexer.cortexChannels[0] || 'cortex-crypto';
+        const origScR = memoryIndexer.peer.sidechannel;
+        memoryIndexer.peer.sidechannel = {
+          broadcast: (_ch, data) => {
+            const parsed = JSON.parse(data);
+            reply(parsed);
+          }
+        };
+        memoryIndexer._handleMemoryRead(cortexR, {
+          v: 1,
+          type: 'memory_read',
+          memory_id: message.memory_id,
+          payment_txid_creator: message.payment_txid_creator || undefined,
+          payment_txid_node: message.payment_txid_node || undefined,
+          payer: message.payer || undefined,
+        }).catch((err) => sendError(err?.message ?? String(err)))
+          .finally(() => { memoryIndexer.peer.sidechannel = origScR; });
+        return;
+      }
+
       default:
         _origHandleClientMessage(client, message);
     }
