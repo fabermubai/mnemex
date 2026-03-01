@@ -28,6 +28,11 @@ export class MemoryIndexer extends Feature {
         this.nodeAddress = options.nodeAddress || null;
         this.msb = options.msb || null; // raw MSB instance for tx verification
         this.defaultFeeAmount = '30000000000000000'; // 0.03 TNK in smallest unit
+
+        // P2P relay: when a memory isn't found locally, broadcast to the network
+        this.pendingRelays = new Map(); // request_id → { replyFn, channel, timer }
+        this.relayTimeoutMs = options.relayTimeoutMs || 10_000; // 10 seconds
+        this.peerId = peer.wallet?.publicKey || null;
     }
 
     /**
@@ -154,6 +159,20 @@ export class MemoryIndexer extends Feature {
             this._handleSkillSearch(channel, msg).catch((err) => {
                 console.error('MemoryIndexer: skill_search error:', err?.message ?? err);
             });
+            return true;
+        }
+
+        // P2P relay: another peer is asking the network for a memory
+        if (msg.type === 'memory_read_relay') {
+            this._handleRelayRequest(channel, msg).catch((err) => {
+                console.error('MemoryIndexer: memory_read_relay error:', err?.message ?? err);
+            });
+            return true;
+        }
+
+        // P2P relay: a peer responded to our relay request
+        if (msg.type === 'memory_read_relay_response') {
+            this._handleRelayResponse(channel, msg);
             return true;
         }
 
@@ -306,6 +325,12 @@ export class MemoryIndexer extends Feature {
 
         // Memory not found locally
         if (!fs.existsSync(filePath)) {
+            // If this is a local/SC-Bridge request (has replyFn) and NOT already a relay,
+            // broadcast to the P2P network instead of returning found:false immediately.
+            if (replyFn && !msg.is_relay) {
+                this._initiateRelay(channel, msg, replyFn);
+                return;
+            }
             const response = {
                 v: 1,
                 type: 'memory_response',
@@ -414,6 +439,117 @@ export class MemoryIndexer extends Feature {
             console.log('MemoryIndexer: appended record_fee for', memory_id, '— creator_txid:', payment_txid_creator, '— node_txid:', payment_txid_node);
         }
     }
+    // ==================== P2P Relay ====================
+
+    /**
+     * Initiate a P2P relay: broadcast a memory_read_relay request to the network
+     * and store the pending replyFn with a timeout.
+     *
+     * @param channel — cortex channel
+     * @param msg — original memory_read message
+     * @param replyFn — callback to deliver the response to the SC-Bridge client
+     */
+    _initiateRelay(channel, msg, replyFn) {
+        const request_id = crypto.randomBytes(16).toString('hex');
+        const memory_id = msg.memory_id;
+
+        // Timeout: if no relay response within relayTimeoutMs, return found:false
+        const timer = setTimeout(() => {
+            const pending = this.pendingRelays.get(request_id);
+            if (!pending) return;
+            this.pendingRelays.delete(request_id);
+            console.log('MemoryIndexer: relay timeout for', memory_id, '— request_id:', request_id);
+            const response = { v: 1, type: 'memory_response', memory_id, found: false, data: null };
+            pending.replyFn(JSON.stringify(response));
+        }, this.relayTimeoutMs);
+
+        this.pendingRelays.set(request_id, { replyFn, channel, timer, memory_id });
+
+        // Broadcast relay request to P2P network
+        const relayMsg = {
+            v: 1,
+            type: 'memory_read_relay',
+            memory_id,
+            request_id,
+            requester_id: this.peerId,
+            payment_txid_creator: msg.payment_txid_creator || undefined,
+            payment_txid_node: msg.payment_txid_node || undefined,
+            payer: msg.payer || undefined,
+        };
+        if (this.peer.sidechannel) {
+            this.peer.sidechannel.broadcast(channel, JSON.stringify(relayMsg));
+        }
+        console.log('MemoryIndexer: relay request broadcast for', memory_id, '— request_id:', request_id);
+    }
+
+    /**
+     * Handle an incoming memory_read_relay from another peer.
+     * If we have the memory locally, process the read and broadcast the response.
+     * If not, do nothing (let the requester's timeout handle it).
+     *
+     * @param channel
+     * @param msg — { v, type, memory_id, request_id, requester_id, payment_txid_creator?, payment_txid_node?, payer? }
+     */
+    async _handleRelayRequest(channel, msg) {
+        // Anti-loop: ignore our own relay requests
+        if (msg.requester_id && msg.requester_id === this.peerId) return;
+
+        const { memory_id, request_id } = msg;
+        if (!memory_id || !request_id) return;
+
+        const filePath = path.join(this.dataDir, memory_id + '.json');
+        if (!fs.existsSync(filePath)) return; // We don't have it either, stay silent
+
+        console.log('MemoryIndexer: relay request from', (msg.requester_id || 'unknown').slice(0, 8) + '…', 'for', memory_id);
+
+        // Process the read locally with is_relay=true to prevent re-relay
+        const relayReplyFn = (dataStr) => {
+            // Wrap the response in a relay_response envelope and broadcast back
+            let parsed;
+            try { parsed = JSON.parse(dataStr); } catch (_e) { return; }
+            const relayResponse = {
+                v: 1,
+                type: 'memory_read_relay_response',
+                request_id,
+                response: parsed,
+            };
+            if (this.peer.sidechannel) {
+                this.peer.sidechannel.broadcast(channel, JSON.stringify(relayResponse));
+            }
+        };
+
+        await this._handleMemoryRead(channel, {
+            v: 1,
+            type: 'memory_read',
+            memory_id,
+            is_relay: true,
+            payment_txid_creator: msg.payment_txid_creator || undefined,
+            payment_txid_node: msg.payment_txid_node || undefined,
+            payer: msg.payer || undefined,
+        }, relayReplyFn);
+    }
+
+    /**
+     * Handle an incoming memory_read_relay_response from a peer that has the data.
+     * Match it to a pending relay request and deliver to the waiting client.
+     *
+     * @param channel
+     * @param msg — { v, type, request_id, response }
+     */
+    _handleRelayResponse(channel, msg) {
+        const { request_id, response } = msg;
+        if (!request_id || !response) return;
+
+        const pending = this.pendingRelays.get(request_id);
+        if (!pending) return; // Timed out or duplicate
+
+        // Deliver the response to the waiting SC-Bridge client
+        clearTimeout(pending.timer);
+        this.pendingRelays.delete(request_id);
+        pending.replyFn(JSON.stringify(response));
+        console.log('MemoryIndexer: relay response received for', pending.memory_id, '— request_id:', request_id);
+    }
+
     // ==================== Skill Handlers ====================
 
     /**
