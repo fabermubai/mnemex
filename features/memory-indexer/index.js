@@ -135,6 +135,27 @@ export class MemoryIndexer extends Feature {
             return true;
         }
 
+        if (msg.type === 'memory_search') {
+            this._handleMemorySearch(channel, msg).catch((err) => {
+                console.error('MemoryIndexer: memory_search error:', err?.message ?? err);
+            });
+            return true;
+        }
+
+        if (msg.type === 'memory_list') {
+            this._handleMemoryList(channel, msg).catch((err) => {
+                console.error('MemoryIndexer: memory_list error:', err?.message ?? err);
+            });
+            return true;
+        }
+
+        if (msg.type === 'skill_search') {
+            this._handleSkillSearch(channel, msg).catch((err) => {
+                console.error('MemoryIndexer: skill_search error:', err?.message ?? err);
+            });
+            return true;
+        }
+
         return false;
     }
 
@@ -499,6 +520,219 @@ export class MemoryIndexer extends Feature {
         if (this.peer.sidechannel) {
             this.peer.sidechannel.broadcast(channel, JSON.stringify(response));
             console.log('MemoryIndexer: skill_catalog response —', skills.length, 'skills');
+        }
+    }
+    // ==================== Search & List Handlers ====================
+
+    /**
+     * Process a memory_search message:
+     * Scan local mnemex-data/ files and match query against memory_id,
+     * keys and values of the stored JSON content. Case-insensitive substring.
+     *
+     * @param channel
+     * @param msg — { v, type, query, cortex?, author? }
+     */
+    async _handleMemorySearch(channel, msg) {
+        const query = typeof msg.query === 'string' ? msg.query.trim().toLowerCase() : '';
+        const cortexFilter = msg.cortex || null;
+        const authorFilter = msg.author || null;
+        const limit = Number.isInteger(msg.limit) && msg.limit > 0 ? Math.min(msg.limit, 50) : 20;
+
+        if (!query) {
+            if (this.peer.sidechannel) {
+                this.peer.sidechannel.broadcast(channel, JSON.stringify({
+                    v: 1,
+                    type: 'memory_search_response',
+                    query: '',
+                    results: [],
+                    total: 0,
+                    ts: Date.now()
+                }));
+            }
+            return;
+        }
+
+        const results = [];
+        if (!fs.existsSync(this.dataDir)) {
+            if (this.peer.sidechannel) {
+                this.peer.sidechannel.broadcast(channel, JSON.stringify({
+                    v: 1, type: 'memory_search_response', query: msg.query,
+                    results: [], total: 0, ts: Date.now()
+                }));
+            }
+            return;
+        }
+
+        const files = fs.readdirSync(this.dataDir).filter(f => f.endsWith('.json'));
+        for (const file of files) {
+            const filePath = path.join(this.dataDir, file);
+            let stored;
+            try {
+                stored = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+            } catch (_e) { continue; }
+
+            // Filter by cortex
+            if (cortexFilter && stored.cortex !== cortexFilter) continue;
+            // Filter by author
+            if (authorFilter && stored.author !== authorFilter) continue;
+
+            // Search in memory_id
+            const mid = (stored.memory_id || '').toLowerCase();
+            let matched = mid.includes(query);
+
+            // Search in data keys and values (shallow)
+            if (!matched && stored.data && typeof stored.data === 'object') {
+                for (const [k, v] of Object.entries(stored.data)) {
+                    const kLower = String(k).toLowerCase();
+                    const vLower = String(v).toLowerCase();
+                    if (kLower.includes(query) || vLower.includes(query)) {
+                        matched = true;
+                        break;
+                    }
+                }
+            }
+
+            if (matched) {
+                results.push({
+                    memory_id: stored.memory_id,
+                    cortex: stored.cortex,
+                    author: stored.author,
+                    preview: stored.data || null,
+                    ts: stored.ts || null
+                });
+                if (results.length >= limit) break;
+            }
+        }
+
+        const response = {
+            v: 1,
+            type: 'memory_search_response',
+            query: msg.query,
+            results,
+            total: results.length,
+            ts: Date.now()
+        };
+
+        if (this.peer.sidechannel) {
+            this.peer.sidechannel.broadcast(channel, JSON.stringify(response));
+            console.log('MemoryIndexer: memory_search "' + msg.query + '" —', results.length, 'results');
+        }
+    }
+
+    /**
+     * Process a memory_list message:
+     * List all memories stored locally, optionally filtered by cortex and/or author.
+     *
+     * @param channel
+     * @param msg — { v, type, cortex?, author?, limit? }
+     */
+    async _handleMemoryList(channel, msg) {
+        const cortexFilter = msg.cortex || null;
+        const authorFilter = msg.author || null;
+        const limit = Number.isInteger(msg.limit) && msg.limit > 0 ? Math.min(msg.limit, 100) : 20;
+
+        const memories = [];
+        if (fs.existsSync(this.dataDir)) {
+            const files = fs.readdirSync(this.dataDir).filter(f => f.endsWith('.json'));
+            for (const file of files) {
+                const filePath = path.join(this.dataDir, file);
+                let stored;
+                try {
+                    stored = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+                } catch (_e) { continue; }
+
+                if (cortexFilter && stored.cortex !== cortexFilter) continue;
+                if (authorFilter && stored.author !== authorFilter) continue;
+
+                memories.push({
+                    memory_id: stored.memory_id,
+                    cortex: stored.cortex,
+                    author: stored.author,
+                    access: stored.access || 'open',
+                    ts: stored.ts || null
+                });
+                if (memories.length >= limit) break;
+            }
+        }
+
+        const response = {
+            v: 1,
+            type: 'memory_list_response',
+            memories,
+            total: memories.length,
+            ts: Date.now()
+        };
+
+        if (this.peer.sidechannel) {
+            this.peer.sidechannel.broadcast(channel, JSON.stringify(response));
+            console.log('MemoryIndexer: memory_list —', memories.length, 'memories');
+        }
+    }
+
+    /**
+     * Process a skill_search message:
+     * Search registered skills by matching query against name and description.
+     * Uses local skills directory (not contract state) for fast lookup.
+     *
+     * @param channel
+     * @param msg — { v, type, query, cortex? }
+     */
+    async _handleSkillSearch(channel, msg) {
+        const query = typeof msg.query === 'string' ? msg.query.trim().toLowerCase() : '';
+        const cortexFilter = msg.cortex || null;
+        const limit = Number.isInteger(msg.limit) && msg.limit > 0 ? Math.min(msg.limit, 50) : 20;
+
+        if (!query) {
+            if (this.peer.sidechannel) {
+                this.peer.sidechannel.broadcast(channel, JSON.stringify({
+                    v: 1, type: 'skill_search_response', query: '',
+                    results: [], total: 0, ts: Date.now()
+                }));
+            }
+            return;
+        }
+
+        const results = [];
+        if (fs.existsSync(this.skillsDir)) {
+            const files = fs.readdirSync(this.skillsDir).filter(f => f.endsWith('.json'));
+            for (const file of files) {
+                const filePath = path.join(this.skillsDir, file);
+                let stored;
+                try {
+                    stored = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+                } catch (_e) { continue; }
+
+                if (cortexFilter && stored.cortex !== cortexFilter) continue;
+
+                const nameLower = (stored.name || '').toLowerCase();
+                const descLower = (stored.description || '').toLowerCase();
+                if (nameLower.includes(query) || descLower.includes(query)) {
+                    results.push({
+                        skill_id: stored.skill_id,
+                        name: stored.name,
+                        description: stored.description,
+                        cortex: stored.cortex,
+                        price: stored.price,
+                        version: stored.version,
+                        author: stored.author
+                    });
+                    if (results.length >= limit) break;
+                }
+            }
+        }
+
+        const response = {
+            v: 1,
+            type: 'skill_search_response',
+            query: msg.query,
+            results,
+            total: results.length,
+            ts: Date.now()
+        };
+
+        if (this.peer.sidechannel) {
+            this.peer.sidechannel.broadcast(channel, JSON.stringify(response));
+            console.log('MemoryIndexer: skill_search "' + msg.query + '" —', results.length, 'results');
         }
     }
 }

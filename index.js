@@ -681,6 +681,69 @@ if (scBridge) {
         return;
       }
 
+      /* ── memory_search ───────────────────────────────────────────────── */
+      case 'memory_search': {
+        const cortex = message.cortex || null;
+        const scChannel = cortex && memoryIndexer.cortexChannels.includes(cortex)
+          ? cortex
+          : memoryIndexer.cortexChannels[0] || 'cortex-crypto';
+        // Patch: capture broadcast and reply directly to the requesting client
+        const origSc = memoryIndexer.peer.sidechannel;
+        memoryIndexer.peer.sidechannel = {
+          broadcast: (_ch, data) => {
+            const parsed = JSON.parse(data);
+            reply(parsed);
+          }
+        };
+        memoryIndexer._handleMemorySearch(scChannel, {
+          v: 1, type: 'memory_search',
+          query: message.query || '',
+          cortex: message.cortex || null,
+          author: message.author || null,
+          limit: message.limit
+        }).catch((err) => sendError(err?.message ?? String(err)))
+          .finally(() => { memoryIndexer.peer.sidechannel = origSc; });
+        return;
+      }
+
+      /* ── memory_list ─────────────────────────────────────────────────── */
+      case 'memory_list': {
+        const origSc2 = memoryIndexer.peer.sidechannel;
+        memoryIndexer.peer.sidechannel = {
+          broadcast: (_ch, data) => {
+            const parsed = JSON.parse(data);
+            reply(parsed);
+          }
+        };
+        memoryIndexer._handleMemoryList(memoryIndexer.cortexChannels[0] || 'cortex-crypto', {
+          v: 1, type: 'memory_list',
+          cortex: message.cortex || null,
+          author: message.author || null,
+          limit: message.limit
+        }).catch((err) => sendError(err?.message ?? String(err)))
+          .finally(() => { memoryIndexer.peer.sidechannel = origSc2; });
+        return;
+      }
+
+      /* ── skill_search ────────────────────────────────────────────────── */
+      case 'skill_search': {
+        const origSc3 = memoryIndexer.peer.sidechannel;
+        memoryIndexer.peer.sidechannel = {
+          broadcast: (_ch, data) => {
+            const parsed = JSON.parse(data);
+            reply(parsed);
+          }
+        };
+        memoryIndexer._handleSkillSearch(memoryIndexer.skillsChannel, {
+          v: 1, type: 'skill_search',
+          query: message.query || '',
+          cortex: message.cortex || null,
+          limit: message.limit
+        }).catch((err) => sendError(err?.message ?? String(err)))
+          .finally(() => { memoryIndexer.peer.sidechannel = origSc3; });
+        return;
+      }
+
       default:
         _origHandleClientMessage(client, message);
     }
