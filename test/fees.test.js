@@ -415,9 +415,9 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
         });
     });
 
-    // ========== MemoryIndexer Payment Gate tests ==========
+    // ========== MemoryIndexer Payment Gate tests (immediate split) ==========
 
-    describe('MemoryIndexer Payment Gate', () => {
+    describe('MemoryIndexer Payment Gate — immediate split', () => {
         const TEST_DATA_DIR = './test-mnemex-data-fees-' + Date.now();
         let indexer;
         let appendCalls;
@@ -427,6 +427,9 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
             base: { writable: true, append: async () => {} },
             protocol: { instance: { generateNonce: () => 'nonce-' + Date.now() } },
             wallet: { publicKey: 'cc'.repeat(32), sign: () => 'fake-sig', address: 'trac1testnode' },
+            msbClient: {
+                pubKeyHexToAddress: (hex) => 'trac1creator_' + hex.slice(0, 8),
+            },
             sidechannel: {
                 broadcast: (channel, message) => {
                     broadcastCalls.push({ channel, message });
@@ -452,7 +455,7 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
 
             await indexer.start();
 
-            // Pre-store a memory for read tests
+            // Pre-store an open memory for read tests
             await indexer._handleMemoryWrite('cortex-crypto', {
                 v: 1,
                 type: 'memory_write',
@@ -460,6 +463,18 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
                 cortex: 'crypto',
                 data: { key: 'ETH/USD', value: 3200 },
                 author: 'cc'.repeat(32),
+                ts: 1708617600000,
+            });
+
+            // Pre-store a gated memory for split ratio tests
+            await indexer._handleMemoryWrite('cortex-crypto', {
+                v: 1,
+                type: 'memory_write',
+                memory_id: 'gated-mem-001',
+                cortex: 'crypto',
+                data: { key: 'ALPHA/SIGNAL', value: 'premium' },
+                author: 'bb'.repeat(32),
+                access: 'gated',
                 ts: 1708617600000,
             });
 
@@ -474,12 +489,12 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
             }
         });
 
-        it('should return payment_required when no payment_txid', async () => {
+        it('should return payment_required with split amounts and two addresses', async () => {
             await indexer._handleMemoryRead('cortex-crypto', {
                 v: 1,
                 type: 'memory_read',
                 memory_id: 'paid-mem-001',
-                // no payment_txid
+                // no payment txids
             });
 
             assert.equal(broadcastCalls.length, 1);
@@ -487,11 +502,32 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
             assert.equal(response.type, 'payment_required');
             assert.equal(response.memory_id, 'paid-mem-001');
             assert.equal(response.amount, '30000000000000000');
-            assert.equal(response.pay_to, 'trac1testnode');
+            // 60/40 split for open memory
+            assert.equal(response.creator_share, '18000000000000000');
+            assert.equal(response.node_share, '12000000000000000');
+            assert.equal(response.pay_to_creator, 'trac1creator_cccccccc');
+            assert.equal(response.pay_to_node, 'trac1testnode');
             assert.equal(typeof response.ts, 'number');
         });
 
-        it('should serve data when payment_txid provided', async () => {
+        it('should use 70/30 split for gated memories', async () => {
+            broadcastCalls = [];
+
+            await indexer._handleMemoryRead('cortex-crypto', {
+                v: 1,
+                type: 'memory_read',
+                memory_id: 'gated-mem-001',
+            });
+
+            assert.equal(broadcastCalls.length, 1);
+            const response = JSON.parse(broadcastCalls[0].message);
+            assert.equal(response.type, 'payment_required');
+            assert.equal(response.creator_share, '21000000000000000'); // 70%
+            assert.equal(response.node_share, '9000000000000000');     // 30%
+            assert.equal(response.pay_to_creator, 'trac1creator_bbbbbbbb');
+        });
+
+        it('should serve data when both payment txids provided', async () => {
             broadcastCalls = [];
             appendCalls = [];
 
@@ -499,7 +535,8 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
                 v: 1,
                 type: 'memory_read',
                 memory_id: 'paid-mem-001',
-                payment_txid: 'msb-tx-hash-123',
+                payment_txid_creator: 'tx-creator-123',
+                payment_txid_node: 'tx-node-456',
                 payer: 'dd'.repeat(32),
             });
 
@@ -511,15 +548,34 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
             assert.deepEqual(response.data, { key: 'ETH/USD', value: 3200 });
             assert.equal(response.fee_recorded, true);
 
-            // Verify record_fee was appended
+            // Verify record_fee was appended with both txids
             assert.equal(appendCalls.length, 1);
             assert.equal(appendCalls[0].key, 'record_fee');
             const feeVal = appendCalls[0].value;
             assert.equal(feeVal.memory_id, 'paid-mem-001');
             assert.equal(feeVal.operation, 'read_open');
             assert.equal(feeVal.payer, 'dd'.repeat(32));
-            assert.equal(feeVal.payment_txid, 'msb-tx-hash-123');
+            assert.equal(feeVal.payment_txid_creator, 'tx-creator-123');
+            assert.equal(feeVal.payment_txid_node, 'tx-node-456');
             assert.equal(feeVal.amount, '30000000000000000');
+            assert.equal(feeVal.creator_share, '18000000000000000');
+            assert.equal(feeVal.node_share, '12000000000000000');
+        });
+
+        it('should return payment_required when only one txid is provided', async () => {
+            broadcastCalls = [];
+
+            await indexer._handleMemoryRead('cortex-crypto', {
+                v: 1,
+                type: 'memory_read',
+                memory_id: 'paid-mem-001',
+                payment_txid_creator: 'tx-creator-only',
+                // missing payment_txid_node
+            });
+
+            assert.equal(broadcastCalls.length, 1);
+            const response = JSON.parse(broadcastCalls[0].message);
+            assert.equal(response.type, 'payment_required');
         });
 
         it('should return found:false for non-existent memory even with payment', async () => {
@@ -529,7 +585,8 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
                 v: 1,
                 type: 'memory_read',
                 memory_id: 'nonexistent-paid',
-                payment_txid: 'msb-tx-ghost',
+                payment_txid_creator: 'tx-c-ghost',
+                payment_txid_node: 'tx-n-ghost',
             });
 
             assert.equal(broadcastCalls.length, 1);
@@ -669,10 +726,10 @@ describe('TNK Transfer Utilities', () => {
 });
 
 // ---------------------------------------------------------------------------
-// MemoryIndexer — MSB txid verification
+// MemoryIndexer — MSB dual-txid verification
 // ---------------------------------------------------------------------------
 
-describe('MemoryIndexer — MSB txid verification', () => {
+describe('MemoryIndexer — MSB dual-txid verification', () => {
     const TEST_DATA_DIR = './test-mnemex-data-txverify-' + Date.now();
     let broadcastCalls;
     let appendCalls;
@@ -681,6 +738,9 @@ describe('MemoryIndexer — MSB txid verification', () => {
         base: { writable: true, append: async () => {} },
         protocol: { instance: { generateNonce: () => 'nonce-' + Date.now() } },
         wallet: { publicKey: 'ee'.repeat(32), sign: () => 'fake-sig', address: 'trac1verifynode' },
+        msbClient: {
+            pubKeyHexToAddress: (hex) => 'trac1_' + hex.slice(0, 8),
+        },
         sidechannel: {
             broadcast: (channel, message) => {
                 broadcastCalls.push({ channel, message });
@@ -694,13 +754,13 @@ describe('MemoryIndexer — MSB txid verification', () => {
         }
     });
 
-    it('should reject unconfirmed payment_txid with payment_not_confirmed', async () => {
+    it('should reject when creator txid is not confirmed', async () => {
         broadcastCalls = [];
         appendCalls = [];
 
         const mockMsb = {
             state: {
-                getTransactionConfirmedLength: async () => null // tx NOT confirmed
+                getTransactionConfirmedLength: async () => null // nothing confirmed
             }
         };
 
@@ -725,30 +785,31 @@ describe('MemoryIndexer — MSB txid verification', () => {
         broadcastCalls = [];
         appendCalls = [];
 
-        // Read with unconfirmed txid
+        // Read with unconfirmed creator txid
         await indexer._handleMemoryRead('cortex-crypto', {
             v: 1, type: 'memory_read',
             memory_id: 'verify-mem-001',
-            payment_txid: 'unconfirmed-tx-abc',
+            payment_txid_creator: 'unconfirmed-creator-tx',
+            payment_txid_node: 'node-tx-ok',
         });
 
         assert.equal(broadcastCalls.length, 1);
         const response = JSON.parse(broadcastCalls[0].message);
         assert.equal(response.type, 'payment_not_confirmed');
-        assert.equal(response.memory_id, 'verify-mem-001');
-        assert.equal(response.payment_txid, 'unconfirmed-tx-abc');
-        // No fee should be recorded
+        assert.equal(response.payment_txid, 'unconfirmed-creator-tx');
+        assert.equal(response.which, 'creator');
         assert.equal(appendCalls.length, 0);
     });
 
-    it('should serve data when payment_txid is confirmed on MSB', async () => {
+    it('should reject when node txid is not confirmed', async () => {
         broadcastCalls = [];
         appendCalls = [];
 
         const mockMsb = {
             state: {
                 getTransactionConfirmedLength: async (hash) => {
-                    if (hash === 'confirmed-tx-xyz') return 99;
+                    // Creator confirmed, node NOT
+                    if (hash === 'creator-tx-ok') return 10;
                     return null;
                 }
             }
@@ -765,12 +826,51 @@ describe('MemoryIndexer — MSB txid verification', () => {
         indexer.append = async (key, value) => { appendCalls.push({ key, value }); };
         await indexer.start();
 
-        // Memory already written in previous test (same dataDir)
-        // Read with confirmed txid
         await indexer._handleMemoryRead('cortex-crypto', {
             v: 1, type: 'memory_read',
             memory_id: 'verify-mem-001',
-            payment_txid: 'confirmed-tx-xyz',
+            payment_txid_creator: 'creator-tx-ok',
+            payment_txid_node: 'unconfirmed-node-tx',
+        });
+
+        assert.equal(broadcastCalls.length, 1);
+        const response = JSON.parse(broadcastCalls[0].message);
+        assert.equal(response.type, 'payment_not_confirmed');
+        assert.equal(response.payment_txid, 'unconfirmed-node-tx');
+        assert.equal(response.which, 'node');
+        assert.equal(appendCalls.length, 0);
+    });
+
+    it('should serve data when both txids are confirmed on MSB', async () => {
+        broadcastCalls = [];
+        appendCalls = [];
+
+        const mockMsb = {
+            state: {
+                getTransactionConfirmedLength: async (hash) => {
+                    if (hash === 'confirmed-creator-tx') return 50;
+                    if (hash === 'confirmed-node-tx') return 51;
+                    return null;
+                }
+            }
+        };
+
+        const indexer = new MemoryIndexer(makeMockPeer(), {
+            dataDir: TEST_DATA_DIR,
+            cortexChannels: ['cortex-crypto'],
+            requirePayment: true,
+            nodeAddress: 'trac1verifynode',
+            msb: mockMsb,
+        });
+        indexer.key = 'memory_indexer';
+        indexer.append = async (key, value) => { appendCalls.push({ key, value }); };
+        await indexer.start();
+
+        await indexer._handleMemoryRead('cortex-crypto', {
+            v: 1, type: 'memory_read',
+            memory_id: 'verify-mem-001',
+            payment_txid_creator: 'confirmed-creator-tx',
+            payment_txid_node: 'confirmed-node-tx',
             payer: 'ff'.repeat(32),
         });
 
@@ -781,13 +881,14 @@ describe('MemoryIndexer — MSB txid verification', () => {
         assert.deepEqual(response.data, { key: 'SOL/USD', value: 120 });
         assert.equal(response.fee_recorded, true);
 
-        // Fee should be recorded via append
+        // Fee recorded with both txids
         assert.equal(appendCalls.length, 1);
         assert.equal(appendCalls[0].key, 'record_fee');
-        assert.equal(appendCalls[0].value.payment_txid, 'confirmed-tx-xyz');
+        assert.equal(appendCalls[0].value.payment_txid_creator, 'confirmed-creator-tx');
+        assert.equal(appendCalls[0].value.payment_txid_node, 'confirmed-node-tx');
     });
 
-    it('should skip MSB verification when msb is null (legacy behavior)', async () => {
+    it('should skip MSB verification when msb is null (dev mode)', async () => {
         broadcastCalls = [];
         appendCalls = [];
 
@@ -796,17 +897,17 @@ describe('MemoryIndexer — MSB txid verification', () => {
             cortexChannels: ['cortex-crypto'],
             requirePayment: true,
             nodeAddress: 'trac1verifynode',
-            msb: null, // no MSB instance — skip verification
+            msb: null, // no MSB — skip verification
         });
         indexer.key = 'memory_indexer';
         indexer.append = async (key, value) => { appendCalls.push({ key, value }); };
         await indexer.start();
 
-        // Read with any txid — should serve data without MSB check
         await indexer._handleMemoryRead('cortex-crypto', {
             v: 1, type: 'memory_read',
             memory_id: 'verify-mem-001',
-            payment_txid: 'any-txid-no-msb',
+            payment_txid_creator: 'any-creator-tx',
+            payment_txid_node: 'any-node-tx',
             payer: 'aa'.repeat(32),
         });
 
@@ -816,7 +917,7 @@ describe('MemoryIndexer — MSB txid verification', () => {
         assert.equal(response.found, true);
         assert.deepEqual(response.data, { key: 'SOL/USD', value: 120 });
 
-        // Fee should still be recorded (payment_txid was provided)
+        // Fee still recorded
         assert.equal(appendCalls.length, 1);
         assert.equal(appendCalls[0].key, 'record_fee');
     });

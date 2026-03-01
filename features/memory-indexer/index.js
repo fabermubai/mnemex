@@ -241,20 +241,46 @@ export class MemoryIndexer extends Feature {
     }
 
     /**
-     * Process a memory_read message:
-     * 1. Look up the data locally
-     * 2. If requirePayment and no payment_txid → respond with payment_required
-     * 3. If payment provided (or requirePayment is false) → serve data
-     * 4. After serving → record fee via contract entry (if payment_txid present)
+     * Resolve a creator pubkey hex to a bech32m trac1 address.
+     * Uses peer.msbClient if available, falls back to raw pubkey hex.
+     */
+    _getCreatorAddress(authorPubKeyHex) {
+        if (this.peer.msbClient?.pubKeyHexToAddress) {
+            return this.peer.msbClient.pubKeyHexToAddress(authorPubKeyHex);
+        }
+        return authorPubKeyHex;
+    }
+
+    /**
+     * Compute fee split amounts based on memory access type.
+     * - open:  60% creator, 40% node
+     * - gated: 70% creator, 30% node
+     */
+    _computeFeeSplit(access) {
+        const total = BigInt(this.defaultFeeAmount);
+        const creatorPct = access === 'gated' ? 70n : 60n;
+        const nodePct = access === 'gated' ? 30n : 40n;
+        return {
+            creator_share: (total * creatorPct / 100n).toString(),
+            node_share: (total * nodePct / 100n).toString()
+        };
+    }
+
+    /**
+     * Process a memory_read message — immediate fee split flow:
      *
-     * Expected message format:
-     * { v: 1, type: "memory_read", memory_id, payment_txid? }
+     * 1. Look up the data locally
+     * 2. If requirePayment and no payment txids → respond with payment_required
+     *    including split amounts + two pay-to addresses (creator + node)
+     * 3. Agent sends 2 TNK transfers and retries with payment_txid_creator + payment_txid_node
+     * 4. Verify both txids on MSB (if msb available)
+     * 5. If both confirmed → serve data and record fee
      *
      * @param channel
      * @param msg
      */
     async _handleMemoryRead(channel, msg) {
-        const { memory_id, payment_txid } = msg;
+        const { memory_id, payment_txid_creator, payment_txid_node } = msg;
 
         if (!memory_id) {
             console.log('MemoryIndexer: memory_read rejected — missing memory_id');
@@ -279,14 +305,24 @@ export class MemoryIndexer extends Feature {
             return;
         }
 
-        // Payment gate: if requirePayment and no payment_txid, return payment_required
-        if (this.requirePayment && !payment_txid) {
+        // Read stored data to get author + access type for fee computation
+        const raw = fs.readFileSync(filePath, 'utf8');
+        const stored = JSON.parse(raw);
+        const hasPayment = !!(payment_txid_creator && payment_txid_node);
+
+        // Payment gate: no payment txids → return payment_required with split info
+        if (this.requirePayment && !hasPayment) {
+            const split = this._computeFeeSplit(stored.access);
+            const creatorAddress = this._getCreatorAddress(stored.author);
             const response = {
                 v: 1,
                 type: 'payment_required',
                 memory_id,
                 amount: this.defaultFeeAmount,
-                pay_to: this.nodeAddress,
+                creator_share: split.creator_share,
+                node_share: split.node_share,
+                pay_to_creator: creatorAddress,
+                pay_to_node: this.nodeAddress,
                 ts: Date.now()
             };
             if (this.peer.sidechannel) {
@@ -296,28 +332,44 @@ export class MemoryIndexer extends Feature {
             return;
         }
 
-        // Verify payment on MSB if msb is available
-        if (this.requirePayment && payment_txid && this.msb) {
-            const confirmed = await this.msb.state.getTransactionConfirmedLength(payment_txid);
-            if (confirmed === null) {
+        // Verify both payments on MSB if msb is available
+        if (this.requirePayment && hasPayment && this.msb) {
+            const confirmedCreator = await this.msb.state.getTransactionConfirmedLength(payment_txid_creator);
+            if (confirmedCreator === null) {
                 const response = {
                     v: 1,
                     type: 'payment_not_confirmed',
                     memory_id,
-                    payment_txid,
+                    payment_txid: payment_txid_creator,
+                    which: 'creator',
                     ts: Date.now()
                 };
                 if (this.peer.sidechannel) {
                     this.peer.sidechannel.broadcast(channel, JSON.stringify(response));
-                    console.log('MemoryIndexer: payment_not_confirmed for', memory_id, '— txid:', payment_txid);
+                    console.log('MemoryIndexer: payment_not_confirmed (creator) for', memory_id, '— txid:', payment_txid_creator);
+                }
+                return;
+            }
+
+            const confirmedNode = await this.msb.state.getTransactionConfirmedLength(payment_txid_node);
+            if (confirmedNode === null) {
+                const response = {
+                    v: 1,
+                    type: 'payment_not_confirmed',
+                    memory_id,
+                    payment_txid: payment_txid_node,
+                    which: 'node',
+                    ts: Date.now()
+                };
+                if (this.peer.sidechannel) {
+                    this.peer.sidechannel.broadcast(channel, JSON.stringify(response));
+                    console.log('MemoryIndexer: payment_not_confirmed (node) for', memory_id, '— txid:', payment_txid_node);
                 }
                 return;
             }
         }
 
         // Serve data
-        const raw = fs.readFileSync(filePath, 'utf8');
-        const stored = JSON.parse(raw);
         const response = {
             v: 1,
             type: 'memory_response',
@@ -328,7 +380,7 @@ export class MemoryIndexer extends Feature {
             author: stored.author,
             ts: stored.ts,
             content_hash: stored.content_hash,
-            fee_recorded: !!payment_txid
+            fee_recorded: hasPayment
         };
 
         if (this.peer.sidechannel) {
@@ -337,19 +389,24 @@ export class MemoryIndexer extends Feature {
         }
 
         // Record fee in contract if payment was provided
-        if (payment_txid) {
+        if (hasPayment) {
             const payer = msg.payer || 'unknown';
+            const split = this._computeFeeSplit(stored.access);
             const feeEntry = {
                 memory_id: String(memory_id),
                 operation: stored.access === 'gated' ? 'read_gated' : 'read_open',
                 payer: String(payer),
-                payment_txid: String(payment_txid),
+                payment_txid: String(payment_txid_creator),
+                payment_txid_creator: String(payment_txid_creator),
+                payment_txid_node: String(payment_txid_node),
                 amount: this.defaultFeeAmount,
+                creator_share: split.creator_share,
+                node_share: split.node_share,
                 ts: Date.now()
             };
             if (this.nodeAddress) feeEntry.served_by = String(this.nodeAddress);
             await this.append('record_fee', feeEntry);
-            console.log('MemoryIndexer: appended record_fee for', memory_id, '— txid:', payment_txid);
+            console.log('MemoryIndexer: appended record_fee for', memory_id, '— creator_txid:', payment_txid_creator, '— node_txid:', payment_txid_node);
         }
     }
     // ==================== Skill Handlers ====================
