@@ -437,7 +437,8 @@ class MnemexProtocol extends Protocol{
 
                 // Send creator payment
                 console.log('Sending', _formatTNK(response.creator_share), 'to creator...');
-                const creatorResult = await sendTNK(rawMsb, response.pay_to_creator, response.creator_share);
+                const peerWallet = this.peer.wallet;
+                const creatorResult = await sendTNK(rawMsb, response.pay_to_creator, response.creator_share, peerWallet);
                 if (!creatorResult.success) {
                     console.log('Error: creator payment failed —', creatorResult.error);
                     return;
@@ -446,7 +447,7 @@ class MnemexProtocol extends Protocol{
 
                 // Send node payment
                 console.log('Sending', _formatTNK(response.node_share), 'to node...');
-                const nodeResult = await sendTNK(rawMsb, response.pay_to_node, response.node_share);
+                const nodeResult = await sendTNK(rawMsb, response.pay_to_node, response.node_share, peerWallet);
                 if (!nodeResult.success) {
                     console.log('Error: node payment failed —', nodeResult.error);
                     console.log('Warning: creator payment was already sent (txid:', creatorResult.txHash + ')');

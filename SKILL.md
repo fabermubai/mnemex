@@ -216,7 +216,8 @@ Most agents should use `memory_write` via sidechannel. The `/register_memory` TX
   "v": 1,
   "type": "memory_read",
   "memory_id": "unique-id",
-  "payment_txid": "<msb-tx-hash>",
+  "payment_txid_creator": "<msb-tx-hash-creator-share>",
+  "payment_txid_node": "<msb-tx-hash-node-share>",
   "payer": "<your-pubkey-hex-64>"
 }
 ```
@@ -246,7 +247,10 @@ Payment required:
   "type": "payment_required",
   "memory_id": "unique-id",
   "amount": "30000000000000000",
-  "pay_to": "<node-trac-address>",
+  "creator_share": "21000000000000000",
+  "node_share": "9000000000000000",
+  "pay_to_creator": "<creator-trac-address>",
+  "pay_to_node": "<node-trac-address>",
   "ts": 1708617600000
 }
 ```
@@ -324,7 +328,8 @@ Not found:
   "v": 1,
   "type": "skill_request",
   "skill_id": "crypto-sentiment-v1",
-  "payment_txid": "<msb-tx-hash>",
+  "payment_txid_creator": "<msb-tx-hash-creator-share>",
+  "payment_txid_node": "<msb-tx-hash-node-share>",
   "payer": "<your-pubkey-hex-64>"
 }
 ```
@@ -350,7 +355,10 @@ Payment required:
   "type": "payment_required",
   "skill_id": "crypto-sentiment-v1",
   "amount": "50000000000000000",
-  "pay_to": "<node-trac-address>",
+  "creator_share": "40000000000000000",
+  "node_share": "10000000000000000",
+  "pay_to_creator": "<creator-trac-address>",
+  "pay_to_node": "<node-trac-address>",
   "ts": 1708617600000
 }
 ```
@@ -425,11 +433,12 @@ All `memory_read` and `skill_request` serve data immediately. No `payment_txid` 
 Start the Memory Node with `--require-payment true`.
 
 **Agent workflow for reading a memory:**
-1. Send `memory_read` without `payment_txid`
-2. Receive `payment_required` with `amount` and `pay_to` address
-3. Transfer $TNK to `pay_to` via MSB (regular transfer, not contract TX)
-4. Resend `memory_read` with the MSB transaction hash as `payment_txid`
-5. Receive `memory_response` with data
+1. Send `memory_read` without payment txids
+2. Receive `payment_required` with `amount`, `creator_share`, `node_share`, `pay_to_creator`, `pay_to_node`
+3. Transfer `creator_share` TNK to `pay_to_creator` via MSB (regular transfer, not contract TX)
+4. Transfer `node_share` TNK to `pay_to_node` via MSB
+5. Resend `memory_read` with both MSB transaction hashes as `payment_txid_creator` and `payment_txid_node`
+6. Receive `memory_response` with data
 
 **Fee schedule:**
 
@@ -480,6 +489,7 @@ Full Intercom sidechannel flags (PoW, invites, welcome, owner) are also supporte
 | Command | Description |
 |---------|-------------|
 | `/query_memory --memory_id <id>` | Look up memory metadata on-chain |
+| `/memory_read --memory_id <id> [--cortex <channel>]` | Read memory data (local or P2P relay). Prompts for TNK payment if gated |
 | `/get_balance --address <pubkey>` | Check earned $TNK balance |
 | `/get_stats` | Protocol stats (total fees, fee count) |
 | `/query_skill --skill_id <id>` | Look up skill metadata on-chain |
@@ -488,6 +498,7 @@ Full Intercom sidechannel flags (PoW, invites, welcome, owner) are also supporte
 | `/connections` | Show connected peers |
 | `/sc_stats` | Sidechannel stats (channels, connection count) |
 | `/msb` | MSB status (balance, validators) |
+| `/msb_transfer --to <trac1...> --amount <TNK>` | Send TNK to an address via MSB |
 
 ### Transaction commands (cost 0.03 $TNK each)
 | Command | Description |
@@ -563,7 +574,8 @@ ws.on('message', (d) => {
             ws.close();
         }
         if (inner.type === 'payment_required') {
-            console.log('Pay', inner.amount, 'to', inner.pay_to);
+            console.log('Pay', inner.creator_share, 'to creator:', inner.pay_to_creator);
+            console.log('Pay', inner.node_share, 'to node:', inner.pay_to_node);
             ws.close();
         }
     }

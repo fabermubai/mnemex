@@ -7,10 +7,11 @@ import { bigIntTo16ByteBuffer, bufferToBigInt } from 'trac-msb/src/utils/amountS
  * @param {MainSettlementBus} msb — raw MSB instance (not MsbClient wrapper)
  * @param {string} toAddress — bech32m recipient address ("trac1...")
  * @param {string} amountStr — amount as bigint string (e.g. "30000000000000000" = 0.03 TNK)
+ * @param {object} [wallet] — wallet to sign with (defaults to msb.wallet; pass peer.wallet for peer-funded transfers)
  * @returns {Promise<{ success: boolean, txHash: string|null, error: string|null }>}
  */
-export async function sendTNK(msb, toAddress, amountStr) {
-    const wallet = msb.wallet;
+export async function sendTNK(msb, toAddress, amountStr, wallet) {
+    wallet = wallet || msb.wallet;
     if (!wallet) {
         return { success: false, txHash: null, error: 'Wallet not initialized' };
     }
