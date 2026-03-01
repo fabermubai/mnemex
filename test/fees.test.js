@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import MnemexContract from '../contract/contract.js';
 import { MemoryIndexer } from '../features/memory-indexer/index.js';
+import { verifyTNKTransfer } from '../src/fees/tnk-transfer.js';
 
 // ---------------------------------------------------------------------------
 // Mock contract context — simulates this.get/put/value/address/protocol/assert
@@ -630,5 +631,193 @@ describe('register_memory — update by same author', () => {
         const mem = ctx.state['mem/mem-update-003'];
         assert.equal(mem.author, 'author-aaa');
         assert.equal(mem.content_hash, 'a'.repeat(64));
+    });
+});
+
+// ---------------------------------------------------------------------------
+// TNK Transfer Utilities
+// ---------------------------------------------------------------------------
+
+describe('TNK Transfer Utilities', () => {
+
+    describe('verifyTNKTransfer', () => {
+        it('should return sequence number when tx is confirmed', async () => {
+            const mockMsb = {
+                state: {
+                    getTransactionConfirmedLength: async (hash) => {
+                        if (hash === 'abc123def456'.repeat(5) + 'abcd') return 42;
+                        return null;
+                    }
+                }
+            };
+
+            const result = await verifyTNKTransfer(mockMsb, 'abc123def456'.repeat(5) + 'abcd');
+            assert.equal(result, 42);
+        });
+
+        it('should return null when tx is not confirmed', async () => {
+            const mockMsb = {
+                state: {
+                    getTransactionConfirmedLength: async () => null
+                }
+            };
+
+            const result = await verifyTNKTransfer(mockMsb, 'unknown-tx-hash');
+            assert.equal(result, null);
+        });
+    });
+});
+
+// ---------------------------------------------------------------------------
+// MemoryIndexer — MSB txid verification
+// ---------------------------------------------------------------------------
+
+describe('MemoryIndexer — MSB txid verification', () => {
+    const TEST_DATA_DIR = './test-mnemex-data-txverify-' + Date.now();
+    let broadcastCalls;
+    let appendCalls;
+
+    const makeMockPeer = () => ({
+        base: { writable: true, append: async () => {} },
+        protocol: { instance: { generateNonce: () => 'nonce-' + Date.now() } },
+        wallet: { publicKey: 'ee'.repeat(32), sign: () => 'fake-sig', address: 'trac1verifynode' },
+        sidechannel: {
+            broadcast: (channel, message) => {
+                broadcastCalls.push({ channel, message });
+            },
+        },
+    });
+
+    after(() => {
+        if (fs.existsSync(TEST_DATA_DIR)) {
+            fs.rmSync(TEST_DATA_DIR, { recursive: true });
+        }
+    });
+
+    it('should reject unconfirmed payment_txid with payment_not_confirmed', async () => {
+        broadcastCalls = [];
+        appendCalls = [];
+
+        const mockMsb = {
+            state: {
+                getTransactionConfirmedLength: async () => null // tx NOT confirmed
+            }
+        };
+
+        const indexer = new MemoryIndexer(makeMockPeer(), {
+            dataDir: TEST_DATA_DIR,
+            cortexChannels: ['cortex-crypto'],
+            requirePayment: true,
+            nodeAddress: 'trac1verifynode',
+            msb: mockMsb,
+        });
+        indexer.key = 'memory_indexer';
+        indexer.append = async (key, value) => { appendCalls.push({ key, value }); };
+        await indexer.start();
+
+        // Write a memory first
+        await indexer._handleMemoryWrite('cortex-crypto', {
+            v: 1, type: 'memory_write',
+            memory_id: 'verify-mem-001', cortex: 'crypto',
+            data: { key: 'SOL/USD', value: 120 },
+            author: 'ee'.repeat(32), ts: 1708617600000,
+        });
+        broadcastCalls = [];
+        appendCalls = [];
+
+        // Read with unconfirmed txid
+        await indexer._handleMemoryRead('cortex-crypto', {
+            v: 1, type: 'memory_read',
+            memory_id: 'verify-mem-001',
+            payment_txid: 'unconfirmed-tx-abc',
+        });
+
+        assert.equal(broadcastCalls.length, 1);
+        const response = JSON.parse(broadcastCalls[0].message);
+        assert.equal(response.type, 'payment_not_confirmed');
+        assert.equal(response.memory_id, 'verify-mem-001');
+        assert.equal(response.payment_txid, 'unconfirmed-tx-abc');
+        // No fee should be recorded
+        assert.equal(appendCalls.length, 0);
+    });
+
+    it('should serve data when payment_txid is confirmed on MSB', async () => {
+        broadcastCalls = [];
+        appendCalls = [];
+
+        const mockMsb = {
+            state: {
+                getTransactionConfirmedLength: async (hash) => {
+                    if (hash === 'confirmed-tx-xyz') return 99;
+                    return null;
+                }
+            }
+        };
+
+        const indexer = new MemoryIndexer(makeMockPeer(), {
+            dataDir: TEST_DATA_DIR,
+            cortexChannels: ['cortex-crypto'],
+            requirePayment: true,
+            nodeAddress: 'trac1verifynode',
+            msb: mockMsb,
+        });
+        indexer.key = 'memory_indexer';
+        indexer.append = async (key, value) => { appendCalls.push({ key, value }); };
+        await indexer.start();
+
+        // Memory already written in previous test (same dataDir)
+        // Read with confirmed txid
+        await indexer._handleMemoryRead('cortex-crypto', {
+            v: 1, type: 'memory_read',
+            memory_id: 'verify-mem-001',
+            payment_txid: 'confirmed-tx-xyz',
+            payer: 'ff'.repeat(32),
+        });
+
+        assert.equal(broadcastCalls.length, 1);
+        const response = JSON.parse(broadcastCalls[0].message);
+        assert.equal(response.type, 'memory_response');
+        assert.equal(response.found, true);
+        assert.deepEqual(response.data, { key: 'SOL/USD', value: 120 });
+        assert.equal(response.fee_recorded, true);
+
+        // Fee should be recorded via append
+        assert.equal(appendCalls.length, 1);
+        assert.equal(appendCalls[0].key, 'record_fee');
+        assert.equal(appendCalls[0].value.payment_txid, 'confirmed-tx-xyz');
+    });
+
+    it('should skip MSB verification when msb is null (legacy behavior)', async () => {
+        broadcastCalls = [];
+        appendCalls = [];
+
+        const indexer = new MemoryIndexer(makeMockPeer(), {
+            dataDir: TEST_DATA_DIR,
+            cortexChannels: ['cortex-crypto'],
+            requirePayment: true,
+            nodeAddress: 'trac1verifynode',
+            msb: null, // no MSB instance — skip verification
+        });
+        indexer.key = 'memory_indexer';
+        indexer.append = async (key, value) => { appendCalls.push({ key, value }); };
+        await indexer.start();
+
+        // Read with any txid — should serve data without MSB check
+        await indexer._handleMemoryRead('cortex-crypto', {
+            v: 1, type: 'memory_read',
+            memory_id: 'verify-mem-001',
+            payment_txid: 'any-txid-no-msb',
+            payer: 'aa'.repeat(32),
+        });
+
+        assert.equal(broadcastCalls.length, 1);
+        const response = JSON.parse(broadcastCalls[0].message);
+        assert.equal(response.type, 'memory_response');
+        assert.equal(response.found, true);
+        assert.deepEqual(response.data, { key: 'SOL/USD', value: 120 });
+
+        // Fee should still be recorded (payment_txid was provided)
+        assert.equal(appendCalls.length, 1);
+        assert.equal(appendCalls[0].key, 'record_fee');
     });
 });

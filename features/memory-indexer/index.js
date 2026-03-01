@@ -26,6 +26,7 @@ export class MemoryIndexer extends Feature {
         this.enableSkills = options.enableSkills !== false; // default true
         this.requirePayment = options.requirePayment || false;
         this.nodeAddress = options.nodeAddress || null;
+        this.msb = options.msb || null; // raw MSB instance for tx verification
         this.defaultFeeAmount = '30000000000000000'; // 0.03 TNK in smallest unit
     }
 
@@ -293,6 +294,25 @@ export class MemoryIndexer extends Feature {
                 console.log('MemoryIndexer: payment_required for', memory_id);
             }
             return;
+        }
+
+        // Verify payment on MSB if msb is available
+        if (this.requirePayment && payment_txid && this.msb) {
+            const confirmed = await this.msb.state.getTransactionConfirmedLength(payment_txid);
+            if (confirmed === null) {
+                const response = {
+                    v: 1,
+                    type: 'payment_not_confirmed',
+                    memory_id,
+                    payment_txid,
+                    ts: Date.now()
+                };
+                if (this.peer.sidechannel) {
+                    this.peer.sidechannel.broadcast(channel, JSON.stringify(response));
+                    console.log('MemoryIndexer: payment_not_confirmed for', memory_id, '— txid:', payment_txid);
+                }
+                return;
+            }
         }
 
         // Serve data

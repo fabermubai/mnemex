@@ -520,6 +520,7 @@ const memoryIndexer = new MemoryIndexer(peer, {
   requirePayment: requirePayment,
   nodeAddress: peer.wallet.address || peer.wallet.publicKey,
   enableSkills: enableSkills,
+  msb: msb,
 });
 await peer.protocol.instance.addFeature('memory_indexer', memoryIndexer);
 memoryIndexer.start().catch((err) => console.error('MemoryIndexer feature stopped:', err?.message ?? err));
