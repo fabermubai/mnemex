@@ -346,7 +346,27 @@ export class MemoryIndexer extends Feature {
         // Read stored data to get author + access type for fee computation
         const raw = fs.readFileSync(filePath, 'utf8');
         const stored = JSON.parse(raw);
+        const isAuthorRead = !!(msg.payer && msg.payer === stored.author);
         const hasPayment = !!(payment_txid_creator && payment_txid_node);
+
+        // Author self-read: bypass payment entirely — no fee for reading your own data
+        if (isAuthorRead && this.requirePayment && !hasPayment) {
+            const response = {
+                v: 1,
+                type: 'memory_response',
+                memory_id,
+                found: true,
+                data: stored.data,
+                cortex: stored.cortex,
+                author: stored.author,
+                ts: stored.ts,
+                content_hash: stored.content_hash,
+                fee_recorded: false
+            };
+            this._respond(channel, response, replyFn);
+            console.log('MemoryIndexer: author self-read (free) for', memory_id);
+            return;
+        }
 
         // Payment gate: no payment txids → return payment_required with split info
         if (this.requirePayment && !hasPayment) {

@@ -578,6 +578,29 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
             assert.equal(response.type, 'payment_required');
         });
 
+        it('should serve data free when payer is the author (self-read bypass)', async () => {
+            broadcastCalls = [];
+            appendCalls = [];
+
+            // paid-mem-001 author is 'cc'.repeat(32)
+            await indexer._handleMemoryRead('cortex-crypto', {
+                v: 1,
+                type: 'memory_read',
+                memory_id: 'paid-mem-001',
+                payer: 'cc'.repeat(32),
+                // no payment txids
+            });
+
+            assert.equal(broadcastCalls.length, 1);
+            const response = JSON.parse(broadcastCalls[0].message);
+            assert.equal(response.type, 'memory_response');
+            assert.equal(response.found, true);
+            assert.deepEqual(response.data, { key: 'ETH/USD', value: 3200 });
+            assert.equal(response.fee_recorded, false);
+            // No record_fee should be appended
+            assert.equal(appendCalls.length, 0);
+        });
+
         it('should return found:false for non-existent memory even with payment', async () => {
             broadcastCalls = [];
 
