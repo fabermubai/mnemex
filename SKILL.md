@@ -10,23 +10,35 @@ Mnemex is a **decentralized memory layer for AI agents** built on Trac Network. 
 
 **Intercom lets agents talk. Mnemex lets agents remember.**
 
+## Prerequisites
+
+Before cloning, verify these system requirements. If any is missing, install it first.
+
+| Requirement | Min Version | Install | Verify |
+|---|---|---|---|
+| **Node.js** | 22.x LTS | [nodejs.org](https://nodejs.org/) — pick the 22.x LTS line. **Avoid 24.x** (native-addon incompatibilities with rocksdb-native). | `node -v` → `v22.x.x` |
+| **npm** | (bundled) | Comes with Node.js. | `npm -v` |
+| **Pear Runtime** | latest | `npm install -g pear` | `pear -v` |
+
+```bash
+# Quick check — run all three:
+node -v && npm -v && pear -v
+```
+
+> **First launch — human interaction required.** The first `pear run .` triggers two interactive wallet prompts in the terminal (MSB wallet, then Peer wallet). The AI agent cannot answer these — it must open a terminal window for the human and warn them: *"The peer will ask you to set up two wallets. Follow the prompts in the terminal that just opened."* This is the **only** human interaction required. All subsequent launches load saved keypairs silently.
+
 ## Quick Start
 
 Every Mnemex agent **must run its own peer**. The peer joins the P2P subnet, replicates state via Autobase, and runs the MemoryIndexer that processes writes/reads locally. A standalone WebSocket script connecting to someone else's SC-Bridge will NOT work — sidechannel broadcasts are remote-only (a peer never receives its own messages).
 
-**1. Clone and install:**
+**1. Clone and install** (requires Node.js 22.x and Pear — see Prerequisites above):
 ```bash
 git clone https://github.com/fabermubai/mnemex.git
 cd mnemex
 npm install
 ```
 
-**2. Install Pear Runtime** (if not already):
-```bash
-npm install -g pear && pear -v
-```
-
-**3. Launch the peer in a separate terminal (human handles wallet setup):**
+**2. Launch the peer in a separate terminal (human handles wallet setup):**
 
 The agent opens a new terminal window for the human. The agent has **no visibility** into this terminal — seed phrases and private keys stay with the human.
 
@@ -84,7 +96,7 @@ Back up the Peer wallet seed phrase carefully — it controls your $TNK balance.
 
 > **Security:** The Peer wallet seed phrase controls the wallet's $TNK balance and signing authority. The human must store it securely and **never share it with the AI agent**. The agent only needs the pubkey (public, safe to share) to operate.
 
-**4. Human completes wallet setup in the new terminal, then confirms the peer is running.** The agent can now connect.
+**3. Human completes wallet setup in the new terminal, then confirms the peer is running.** The agent can now connect.
 
 At startup the peer logs three public identifiers — the human should share these with the agent:
 ```
@@ -94,14 +106,12 @@ Peer writer key (hex):  <64-char hex>   ← give this to admin for /add_writer
 ```
 The human can also run `/getKeys` in the peer terminal at any time.
 
-**5. Connect your agent code** to the peer's SC-Bridge at `ws://127.0.0.1:<port>` (use the port configured via `--sc-bridge-port`, default `49222`) and start sending messages (see examples below). The agent takes over from here — all protocol operations go through SC-Bridge.
+**4. Connect your agent code** to the peer's SC-Bridge at `ws://127.0.0.1:<port>` (use the port configured via `--sc-bridge-port`, default `49222`) and start sending messages (see examples below). The agent takes over from here — all protocol operations go through SC-Bridge.
 
 > **Why can't I just connect to a remote SC-Bridge?**
 > Mnemex is peer-to-peer. When you send a `memory_write` via SC-Bridge, your peer broadcasts it to the network. But `broadcast()` is remote-only — your own peer's MemoryIndexer never sees it. Other peers' MemoryIndexers DO receive it and index it. If you connect to someone else's SC-Bridge instead of running your own peer, the message goes out from their peer — but their own MemoryIndexer won't process it either (remote-only). You need your own peer so that OTHER peers on the network can index your data.
 
-### Prerequisites
-- **Node.js >= 22** (22.x or 23.x; avoid 24.x)
-- **Pear Runtime** (see step 2 above)
+### Runtime Requirements
 - **$TNK balance on the Peer wallet** (2nd prompt) for contract transactions (0.03 $TNK per TX) and paid memory reads
 - **Writer permission** (optional) — the admin must `/add_writer --key <your-writer-key>` for you to submit on-chain TXs. Sidechannel `memory_write` works without writer permission
 
