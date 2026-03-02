@@ -1,5 +1,8 @@
+import PeerWallet from 'trac-wallet';
 import { applyStateMessageFactory } from 'trac-msb/src/messages/state/applyStateMessageFactory.js';
 import { bigIntTo16ByteBuffer, bufferToBigInt } from 'trac-msb/src/utils/amountSerialization.js';
+
+const BECH32M_CHARS = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
 
 /**
  * Send a TNK transfer via the MSB.
@@ -14,6 +17,17 @@ export async function sendTNK(msb, toAddress, amountStr, wallet) {
     wallet = wallet || msb.wallet;
     if (!wallet) {
         return { success: false, txHash: null, error: 'Wallet not initialized' };
+    }
+
+    // Validate bech32m address before hitting MSB
+    const decoded = PeerWallet.decodeBech32mSafe(toAddress);
+    if (!decoded) {
+        const dataPart = typeof toAddress === 'string' ? toAddress.slice(5) : '';
+        const invalid = [...dataPart].filter(c => !BECH32M_CHARS.includes(c));
+        const hint = invalid.length > 0
+            ? ` (invalid character${invalid.length > 1 ? 's' : ''}: ${[...new Set(invalid)].map(c => `'${c}'`).join(', ')} — common confusion: 1↔l, 0↔o)`
+            : ' (checksum mismatch)';
+        return { success: false, txHash: null, error: `Invalid bech32m address${hint}` };
     }
 
     const amountBigInt = BigInt(amountStr);

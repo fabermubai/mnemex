@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import MnemexContract from '../contract/contract.js';
 import { MemoryIndexer } from '../features/memory-indexer/index.js';
-import { verifyTNKTransfer } from '../src/fees/tnk-transfer.js';
+import { sendTNK, verifyTNKTransfer } from '../src/fees/tnk-transfer.js';
 
 // ---------------------------------------------------------------------------
 // Mock contract context — simulates this.get/put/value/address/protocol/assert
@@ -744,6 +744,39 @@ describe('TNK Transfer Utilities', () => {
 
             const result = await verifyTNKTransfer(mockMsb, 'unknown-tx-hash');
             assert.equal(result, null);
+        });
+    });
+
+    describe('sendTNK — bech32m address validation', () => {
+        it('should reject invalid bech32m address with helpful error for bad characters', async () => {
+            const mockMsb = {
+                wallet: { publicKey: 'aa'.repeat(32), address: 'trac1fakesender' },
+            };
+
+            // 'o' and '1' are not valid bech32m characters
+            const badAddress = 'trac1ped9c72o5jypky50ucwsnfk1usyazqynwep38grdscvj9n68e14scs0g3e';
+            const result = await sendTNK(mockMsb, badAddress, '50000000000000000');
+
+            assert.equal(result.success, false);
+            assert.equal(result.txHash, null);
+            assert.ok(result.error.includes('Invalid bech32m address'), 'Should mention invalid address');
+            assert.ok(result.error.includes("'o'"), "Should identify 'o' as invalid");
+            assert.ok(result.error.includes("'1'"), "Should identify '1' as invalid");
+            assert.ok(result.error.includes('common confusion'), 'Should hint at common confusion');
+        });
+
+        it('should reject address with valid chars but bad checksum', async () => {
+            const mockMsb = {
+                wallet: { publicKey: 'aa'.repeat(32), address: 'trac1fakesender' },
+            };
+
+            // All valid bech32m chars, but checksum is wrong
+            const badChecksum = 'trac1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqzzyy';
+            const result = await sendTNK(mockMsb, badChecksum, '50000000000000000');
+
+            assert.equal(result.success, false);
+            assert.equal(result.txHash, null);
+            assert.ok(result.error.includes('checksum'), 'Should mention checksum mismatch');
         });
     });
 });

@@ -264,6 +264,7 @@ class MnemexProtocol extends Protocol{
         console.log(' ');
         console.log('- System Commands:');
         console.log('- /get --key "<key>" [--confirmed true|false] | reads subnet state key (confirmed defaults to true).');
+        console.log('- /my_address | prints your bech32m trac address (ready to copy).');
         console.log('- /msb_transfer --to "<trac1...>" --amount "<TNK>" | send TNK to an address via MSB.');
         console.log('- /msb | prints MSB txv + lengths (local MSB node view).');
         console.log('- /print --text "<message>" | print text to terminal.');
@@ -568,6 +569,12 @@ class MnemexProtocol extends Protocol{
             const command = this.safeJsonStringify(feeObj);
             console.log('Submitting record_fee TX...');
             console.log('Run: /tx --command \'' + command + '\'');
+            return;
+        }
+
+        if (this.input.startsWith("/my_address")) {
+            console.log('Peer pubkey (hex):', this.peer.wallet.publicKey);
+            console.log('Peer trac address:', this.peer.wallet.address);
             return;
         }
 
