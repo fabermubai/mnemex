@@ -469,11 +469,24 @@ Start the Memory Node with `--require-payment true`.
 **Agent workflow for reading a memory:**
 1. Send `memory_read` without payment txids
 2. Receive `payment_required` with `amount`, `creator_share`, `node_share`, `pay_to_creator`, `pay_to_node`
-3. Transfer `creator_share` TNK to `pay_to_creator` via MSB (regular transfer, not contract TX)
-4. Transfer `node_share` TNK to `pay_to_node` via MSB
-5. Resend `memory_read` with both MSB transaction hashes as `payment_txid_creator` and `payment_txid_node`
+3. Send `msb_transfer` to pay creator share → extract `txHash` from `msb_transfer_ok` response
+4. Send `msb_transfer` to pay node share → extract `txHash` from `msb_transfer_ok` response
+5. Resend `memory_read` with both txHash values as `payment_txid_creator` and `payment_txid_node`
 6. If you receive `payment_not_confirmed` — the MSB hasn't confirmed the txid yet. Wait ~10 seconds and retry step 5
 7. Receive `memory_response` with data
+
+**MSB transfer via SC-Bridge** (steps 3-4 above):
+```json
+// Request:
+{ "type": "msb_transfer", "to": "trac1...", "amount": "0.018" }
+
+// Success response:
+{ "type": "msb_transfer_ok", "to": "trac1...", "amount": "0.018", "txHash": "64-char-hex" }
+
+// Error response:
+{ "type": "error", "error": "reason" }
+```
+The `txHash` field (camelCase) contains the 64-character hex transaction hash to use as `payment_txid_creator` or `payment_txid_node`.
 
 **Fee schedule:**
 
