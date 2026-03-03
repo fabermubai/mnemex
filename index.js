@@ -840,6 +840,11 @@ if (scBridge) {
           reply_to: entry.value.reply_to ?? null,
           ts: Date.now(),
         };
+        // Log incoming messages from other peers to stdout
+        if (entry.value.address !== peer.wallet.publicKey) {
+          const displayNick = nick?.value ?? entry.value.address.slice(0, 8) + '…';
+          console.log(`\u{1F4E9} Chat from ${displayNick}: ${entry.value.msg}`);
+        }
         for (const client of scBridge.clients) {
           if (!client.ready) continue;
           scBridge._broadcastToClient(client, payload);
