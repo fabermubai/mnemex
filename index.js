@@ -420,8 +420,10 @@ const ensureKeypairFile = async (keyPairPath, rlInstance) => {
   await wallet.initKeyPair(keyPairPath, rlInstance);
 };
 
-const needsInteractive =
-  !fs.existsSync(msbConfig.keyPairPath) || !fs.existsSync(peerConfig.keyPairPath);
+const msbKeypairExists = fs.existsSync(msbConfig.keyPairPath);
+const peerKeypairExists = fs.existsSync(peerConfig.keyPairPath);
+const firstLaunch = !msbKeypairExists && !peerKeypairExists;
+const needsInteractive = !msbKeypairExists || !peerKeypairExists;
 
 let walletRl = null;
 if (needsInteractive) {
@@ -431,8 +433,17 @@ if (needsInteractive) {
   });
 }
 
-await ensureKeypairFile(msbConfig.keyPairPath, walletRl);
-await ensureKeypairFile(peerConfig.keyPairPath, walletRl);
+if (firstLaunch) {
+  // Single-seed onboarding: prompt once, reuse keypair for both stores
+  console.log('First launch — one seed will be used for both MSB and Peer stores.');
+  await ensureKeypairFile(msbConfig.keyPairPath, walletRl);
+  fs.mkdirSync(path.dirname(peerConfig.keyPairPath), { recursive: true });
+  fs.copyFileSync(msbConfig.keyPairPath, peerConfig.keyPairPath);
+  console.log('Keypair replicated to peer store.');
+} else {
+  await ensureKeypairFile(msbConfig.keyPairPath, walletRl);
+  await ensureKeypairFile(peerConfig.keyPairPath, walletRl);
+}
 if (walletRl) walletRl.close();
 
 console.log('=============== STARTING MSB ===============');
