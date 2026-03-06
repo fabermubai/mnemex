@@ -25,7 +25,7 @@ Before cloning, verify these system requirements. If any is missing, install it 
 node -v && npm -v && pear -v
 ```
 
-> **First launch — human interaction required.** The first `pear run .` triggers two interactive wallet prompts in the terminal (MSB wallet, then Peer wallet). The AI agent cannot answer these — it must open a terminal window for the human and warn them: *"The peer will ask you to set up two wallets. Follow the prompts in the terminal that just opened."* This is the **only** human interaction required. All subsequent launches load saved keypairs silently.
+> **First launch — human interaction required.** The first `pear run .` triggers one interactive wallet prompt in the terminal. The AI agent cannot answer it — it must open a terminal window for the human and warn them: *"The peer will ask you to set up a wallet. Follow the prompt in the terminal that just opened."* This is the **only** human interaction required. The same keypair is automatically used for both the MSB and Peer stores. All subsequent launches load saved keypairs silently.
 
 ## Quick Start
 
@@ -68,33 +68,24 @@ gnome-terminal -- bash -c "cd '<repo-path>' && pear run . --peer-store-name my-a
 
 Replace `<repo-path>` with the absolute path to the cloned mnemex directory and `<your-secret-token>` with a random string for SC-Bridge auth.
 
-The peer prompts for two wallets in sequence:
+On first launch the peer prompts for a single wallet:
 
-**First prompt — MSB wallet** (network identity on the Main Settlement Bus):
 ```
+First launch — one seed will be used for both MSB and Peer stores.
 Key file was not found. How do you wish to proceed?
 [1]. Generate new keypair
 [2]. Restore keypair from 12 or 24-word mnemonic
 [3]. Import keypair from file
 Your choice(1/ 2/ 3/):
 ```
-This keypair identifies your node on the MSB network. It does **not** hold or spend $TNK for subnet transactions. Choose `1` to generate a new identity — this is fine even on reinstall. The MSB wallet address is displayed at startup as `MSB Address: trac1...`.
 
-**Second prompt — Peer wallet** (subnet identity, signs TX, **holds $TNK**):
-```
-Key file was not found. How do you wish to proceed?
-[1]. Generate new keypair
-[2]. Restore keypair from 12 or 24-word mnemonic
-[3]. Import keypair from file
-Your choice(1/ 2/ 3/):
-```
-This keypair signs all subnet transactions (type 12). The `trac1...` address derived from this keypair is the one **debited 0.03 $TNK per TX**. If you already have $TNK on a Trac address, you **must** restore that seed here (option `2`) — otherwise your funds will be on a different address and TX will fail. The Peer wallet address is displayed at startup as `Peer trac address: trac1...`.
+This keypair is your node's identity — it signs all subnet transactions (type 12) and its `trac1...` address is **debited 0.03 $TNK per TX**. The same keypair is automatically copied to both the MSB and Peer stores, so you only need to enter your seed once. If you already have $TNK on a Trac address, you **must** restore that seed (option `2`) — otherwise your funds will be on a different address and TX will fail. The address is displayed at startup as `Peer trac address: trac1...`.
 
-> **Which wallet needs $TNK?** The **Peer wallet** (2nd prompt). Subnet TX fees (0.03 $TNK each) are charged to the address derived from the Peer wallet's public key. The MSB wallet (1st prompt) is only a network identity — it does not pay fees.
+Back up the seed phrase carefully — it controls your $TNK balance and signing authority. Keypairs are saved at `stores/<msb-store-name>/db/keypair.json` and `stores/<peer-store-name>/db/keypair.json` (identical content), loaded silently on all subsequent runs. Once imported, the peer signs transactions automatically — the AI agent never has access to private keys.
 
-Back up the Peer wallet seed phrase carefully — it controls your $TNK balance. The MSB seed is less critical (can be regenerated). Keypairs are saved at `stores/<msb-store-name>/db/keypair.json` and `stores/<peer-store-name>/db/keypair.json`, loaded silently on all subsequent runs. Once imported, the peer signs transactions automatically — the AI agent never has access to private keys.
+> **Security:** The seed phrase controls the wallet's $TNK balance and signing authority. The human must store it securely and **never share it with the AI agent**. The agent only needs the pubkey (public, safe to share) to operate.
 
-> **Security:** The Peer wallet seed phrase controls the wallet's $TNK balance and signing authority. The human must store it securely and **never share it with the AI agent**. The agent only needs the pubkey (public, safe to share) to operate.
+> **Existing nodes with two different seeds:** If both keypair files already exist from a previous install, they are kept as-is. The single-seed flow only applies to fresh installs where neither file exists.
 
 **3. Human completes wallet setup in the new terminal, then confirms the peer is running.** The agent can now connect.
 
@@ -112,7 +103,7 @@ The human can also run `/getKeys` in the peer terminal at any time.
 > Mnemex is peer-to-peer. When you send a `memory_write` via SC-Bridge, your peer broadcasts it to the network. But `broadcast()` is remote-only — your own peer's MemoryIndexer never sees it. Other peers' MemoryIndexers DO receive it and index it. If you connect to someone else's SC-Bridge instead of running your own peer, the message goes out from their peer — but their own MemoryIndexer won't process it either (remote-only). You need your own peer so that OTHER peers on the network can index your data.
 
 ### Runtime Requirements
-- **$TNK balance on the Peer wallet** (2nd prompt) for contract transactions (0.03 $TNK per TX) and paid memory reads
+- **$TNK balance on your wallet** for contract transactions (0.03 $TNK per TX) and paid memory reads
 - **Writer permission** (optional) — the admin must `/add_writer --key <your-writer-key>` for you to submit on-chain TXs. Sidechannel `memory_write` works without writer permission
 
 ---
@@ -692,37 +683,16 @@ If you skip this, the new peer may fail to acquire the Autobase lock or show une
 If `pear run` starts but SC-Bridge fails with `EADDRINUSE`, another process (possibly a previous peer) is still bound to the port. Kill it or choose a different port via `--sc-bridge-port`.
 
 ### TX dropped / "insufficient balance" despite funded wallet
-Your $TNK are probably on the **MSB wallet** address (1st prompt) instead of the **Peer wallet** address (2nd prompt). Subnet TX fees are charged to the `trac1...` address derived from the Peer wallet's public key. Check both addresses:
-- `MSB Address: trac1...` — shown at startup (1st block). This is **not** used for TX fees.
-- `Peer trac address: trac1...` — shown at startup (2nd block). This **is** debited for each TX.
-
-Transfer your $TNK to the Peer trac address, or re-run the peer with a fresh store and restore your funded seed at the **2nd prompt** (Peer wallet).
+Subnet TX fees are charged to the `trac1...` address shown at startup as `Peer trac address: trac1...`. On a fresh install (single-seed onboarding), the MSB and Peer addresses are identical. If you upgraded from an older install with two different seeds, your $TNK may be on a different address. Check with `/msb` and transfer to the Peer trac address if needed.
 
 ### "Peer is not writable" / append() silent failure
 Your peer hasn't been authorized as a writer on the Autobase. Ask the admin to run `/add_writer --key <your-writer-key>` (the writer key shown at startup, NOT your wallet pubkey). Sidechannel `memory_write` works without writer permission — only on-chain TX commands require it.
 
 ## Resolved Issues
 
-### Double-input on 2nd keypair prompt
+### Double-input on 2nd keypair prompt (obsolete)
 **Symptom:** When launching a peer with two empty stores (first run), the second wallet prompt (Peer wallet) required typing the choice **twice** before it was accepted.
 
 **Root cause:** `trac-wallet`'s `PeerWallet#setupKeypairInteractiveMode()` creates a new `readline.createInterface({ input: new tty.ReadStream(0) })` per call when no readline instance is passed. After the first `initKeyPair()` (MSB wallet), the readline and its `tty.ReadStream(0)` remained open on fd 0 — the second call created a competing reader on the same fd, causing input to be swallowed.
 
-**Fix:** Create a single shared `readline.createInterface()` in `index.js` and pass it to both `initKeyPair()` calls via the `readline_instance` parameter that `trac-wallet` already supports. The readline is only created when at least one keypair file is missing (lazy init) — this avoids `EBADF` errors when running without a TTY (e.g. background processes). Close it after both prompts are done. No modification to trac-wallet needed.
-
-```javascript
-const needsInteractive =
-  !fs.existsSync(msbConfig.keyPairPath) || !fs.existsSync(peerConfig.keyPairPath);
-
-let walletRl = null;
-if (needsInteractive) {
-  walletRl = readline.createInterface({
-    input: new tty.ReadStream(0),
-    output: new tty.WriteStream(1),
-  });
-}
-
-await ensureKeypairFile(msbConfig.keyPairPath, walletRl);
-await ensureKeypairFile(peerConfig.keyPairPath, walletRl);
-if (walletRl) walletRl.close();
-```
+**Status:** No longer relevant. Since the single-seed onboarding change, fresh installs only prompt once — the keypair is copied to the second store automatically. The shared readline fix remains in place as a safety net for partial-setup edge cases (one file exists, the other doesn't).
