@@ -302,7 +302,7 @@ class MnemexProtocol extends Protocol{
             }
             const onlinePeers = indexer.getOnlinePeers();
             const selfKey = this.peer.wallet.publicKey;
-            const selfNick = indexer.presenceMap.get(selfKey)?.nick || null;
+            const selfNick = this.peer._mnemexConfig?.nick || null;
             console.log('');
             console.log('Online Agents (' + (onlinePeers.length + 1) + '):');
             console.log('  ' + selfKey.slice(0, 12) + '...  ' + (this.peer.wallet.address || '?') + '  ' + (selfNick ? selfNick + '  ' : '') + '(self)');
