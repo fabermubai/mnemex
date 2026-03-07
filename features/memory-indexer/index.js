@@ -559,6 +559,38 @@ export class MemoryIndexer extends Feature {
 
         console.log('MemoryIndexer: relay request from', (msg.requester_id || 'unknown').slice(0, 8) + '…', 'for', memory_id);
 
+        // Bulk sync bypass: serve open memories without payment
+        if (msg.is_sync === true) {
+            const raw = fs.readFileSync(filePath, 'utf8');
+            const stored = JSON.parse(raw);
+            if (stored.access === 'open' || !stored.access) {
+                const relayResponse = {
+                    v: 1,
+                    type: 'memory_read_relay_response',
+                    request_id,
+                    response: {
+                        v: 1,
+                        type: 'memory_response',
+                        memory_id,
+                        found: true,
+                        data: stored.data,
+                        cortex: stored.cortex,
+                        author: stored.author,
+                        ts: stored.ts,
+                        content_hash: stored.content_hash,
+                        fee_recorded: false,
+                    },
+                };
+                if (this.peer.sidechannel) {
+                    this.peer.sidechannel.broadcast(channel, JSON.stringify(relayResponse));
+                }
+                console.log('[sync] served open memory', memory_id, 'to', (msg.requester_id || 'unknown').slice(0, 8) + '…');
+                return;
+            }
+            // Gated memory with is_sync → ignore (don't serve, don't payment_required)
+            return;
+        }
+
         // Process the read locally with is_relay=true to prevent re-relay
         const relayReplyFn = (dataStr) => {
             // Wrap the response in a relay_response envelope and broadcast back
@@ -1192,6 +1224,7 @@ export class MemoryIndexer extends Feature {
                 memory_id,
                 request_id,
                 requester_id: this.peerId,
+                is_sync: true,
             };
             if (this.peer.sidechannel) {
                 this.peer.sidechannel.broadcast(channel, JSON.stringify(relayMsg));
