@@ -947,7 +947,7 @@ const emitPeerAnnounce = () => {
       ts: Date.now(),
     });
     console.log('[presence] emitting peer_announce, nick:', peer._mnemexConfig?.nick, 'channel:', sidechannelEntry);
-    sidechannel.send(sidechannelEntry, announceMsg);
+    sidechannel.broadcast(sidechannelEntry, announceMsg);
     console.log('[presence] peer_announce sent OK');
   } catch (e) { console.error('[presence] emitPeerAnnounce error:', e.message); }
 };
