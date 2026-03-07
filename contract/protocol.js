@@ -4,6 +4,7 @@ import { sendTNK } from "../src/fees/tnk-transfer.js";
 import b4a from "b4a";
 import PeerWallet from "trac-wallet";
 import fs from "fs";
+import { saveConfig } from "../lib/config.js";
 
 const stableStringify = (value) => {
     if (value === null || value === undefined) return 'null';
@@ -211,6 +212,8 @@ class MnemexProtocol extends Protocol{
         console.log('- Mnemex Network Commands:');
         console.log('- /peers');
         console.log('    Show online agents (presence heartbeat, last 5 minutes).');
+        console.log('- /set_nick "<nick>"');
+        console.log('    Change your nick (3-20 chars, alphanumeric/dashes/underscores). Takes effect immediately.');
         console.log(' ');
         console.log('- Mnemex Memory Commands:');
         console.log('- /register_memory --memory_id "<id>" --cortex "<name>" --content_hash "<sha256>" [--access "open"|"gated"] [--tags "tag1,tag2"] [--ts <ms>]');
@@ -315,6 +318,27 @@ class MnemexProtocol extends Protocol{
                 }
             }
             console.log('');
+            return;
+        }
+
+        if (this.input.startsWith("/set_nick")) {
+            const raw = input.replace(/^\/set_nick\s*/, '').replace(/^"(.*)"$/, '$1').trim();
+            if (!raw) {
+                console.log('Usage: /set_nick "<nick>" (3-20 chars, alphanumeric + dashes/underscores)');
+                return;
+            }
+            if (!/^[a-zA-Z0-9_-]{3,20}$/.test(raw)) {
+                console.log('Invalid nick. Use 3-20 alphanumeric characters, dashes, or underscores.');
+                return;
+            }
+            const storePath = this.peer._peerStorePath;
+            if (!storePath) {
+                console.log('Error: peer store path not available.');
+                return;
+            }
+            saveConfig(storePath, { nick: raw });
+            this.peer._mnemexConfig.nick = raw;
+            console.log('✓ Nick updated: ' + raw + ' (restart not required)');
             return;
         }
 

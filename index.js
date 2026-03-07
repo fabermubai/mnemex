@@ -447,7 +447,7 @@ if (firstLaunch) {
 }
 // Nick prompt on first launch (before closing readline)
 const peerStorePath = path.join(peerStoresDirectory, peerStoreNameRaw);
-const mnemexConfig = loadConfig(peerStorePath);
+let mnemexConfig = loadConfig(peerStorePath);
 if (!mnemexConfig.nick && walletRl) {
   const nickPromise = new Promise((resolve) => {
     const onLine = (input) => {
@@ -483,6 +483,8 @@ const peer = new Peer({
 });
 await peer.ready();
 peer._msb = msb;
+peer._mnemexConfig = mnemexConfig;
+peer._peerStorePath = peerStorePath;
 
 const effectiveSubnetBootstrapHex = peer.base?.key
   ? peer.base.key.toString('hex')
@@ -940,7 +942,7 @@ const emitPeerAnnounce = () => {
       type: 'peer_announce',
       peer_key: peer.wallet.publicKey,
       address: peer.wallet.address || null,
-      nick: mnemexConfig.nick || null,
+      nick: peer._mnemexConfig.nick || null,
       capabilities: ['memory_node'],
       ts: Date.now(),
     });
