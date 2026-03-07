@@ -236,6 +236,8 @@ class MnemexProtocol extends Protocol{
         console.log('    Check earnings for an address (local read).');
         console.log('- /get_stats');
         console.log('    Show protocol-wide fee statistics (local read).');
+        console.log('- /mnemex_stats');
+        console.log('    Show full Mnemex network stats: memories, skills, downloads, fees (local read).');
         console.log('- /list_fees [--limit <n>]');
         console.log('    Show recent fee records from state (default last 10).');
         console.log(' ');
@@ -642,6 +644,20 @@ class MnemexProtocol extends Protocol{
             }
             const balance = await this.getSigned('balance/' + address);
             console.log('balance/' + address + ':', balance !== null ? balance : '0');
+            return;
+        }
+
+        if (this.input.startsWith("/mnemex_stats")) {
+            const totalFees = await this.getSigned('stats/total_fees');
+            const feeCount = await this.getSigned('stats/fee_count');
+            const totalMemories = await this.getSigned('stats/total_memories');
+            const totalSkills = await this.getSigned('stats/total_skills');
+            const totalDownloads = await this.getSigned('stats/total_downloads');
+            console.log('Mnemex Network Stats:');
+            console.log('  Memories:  ' + (totalMemories !== null ? totalMemories : 0));
+            console.log('  Skills:    ' + (totalSkills !== null ? totalSkills : 0));
+            console.log('  Downloads: ' + (totalDownloads !== null ? totalDownloads : 0));
+            console.log('  Fees:      ' + (feeCount !== null ? feeCount : 0) + ' (' + (totalFees !== null ? totalFees : '0') + ' TNK)');
             return;
         }
 

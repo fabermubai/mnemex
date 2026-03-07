@@ -32,7 +32,11 @@ class MnemexContract extends Contract {
                 access: { type: "enum", values: ["open", "gated"] },
                 content_hash: { type: "string", min: 64, max: 64 },
                 ts: { type: "number", positive: true, integer: true },
-                tags: { type: "string", optional: true, max: 1024 }
+                tags: { type: "string", optional: true, max: 1024 },
+                trust_level: { type: "enum", values: ["unverified", "consensus", "verified_crypto"], optional: true },
+                source_url: { type: "string", optional: true, max: 2048 },
+                source_hash: { type: "string", optional: true, max: 64 },
+                proof: { type: "string", optional: true, max: 1024 }
             }
         });
 
@@ -224,8 +228,18 @@ class MnemexContract extends Contract {
                     access: val.access || 'open',
                     content_hash: val.content_hash,
                     ts: val.ts,
-                    tags: tags
+                    tags: tags,
+                    trust_level: val.trust_level || 'unverified',
+                    source_url: val.source_url || null,
+                    source_hash: val.source_hash || null,
+                    proof: val.proof || null
                 };
+
+                // Increment total_memories counter only for new entries
+                if (existing === null) {
+                    const existingCount = await _this.get('stats/total_memories');
+                    await _this.put('stats/total_memories', (existingCount !== null ? existingCount : 0) + 1);
+                }
 
                 await _this.put('mem/' + memoryId, metadata);
                 await _this.put('mem_by_author/' + val.author + '/' + memoryId, true);
@@ -318,6 +332,10 @@ class MnemexContract extends Contract {
                 const currentTime = await _this.get('currentTime');
                 const ts = currentTime !== null ? currentTime : 0;
 
+                // Increment total_skills counter
+                const existingSkillCount = await _this.get('stats/total_skills');
+                const newSkillCount = (existingSkillCount !== null ? existingSkillCount : 0) + 1;
+
                 await _this.put('skill/' + skillId, {
                     author: val.author,
                     name: val.name,
@@ -334,6 +352,7 @@ class MnemexContract extends Contract {
                 });
                 await _this.put('skill_by_author/' + val.author + '/' + skillId, true);
                 await _this.put('skill_by_cortex/' + val.cortex + '/' + skillId, true);
+                await _this.put('stats/total_skills', newSkillCount);
             }
 
             if (_this.op.key === 'record_skill_download') {
@@ -405,6 +424,8 @@ class MnemexContract extends Contract {
                 await _this.put('balance_nodes', (nodeBal + nodeShare).toString());
                 await _this.put('stats/total_fees', (totalFees + amount).toString());
                 await _this.put('stats/fee_count', feeCount + 1);
+                const existingDlCount = await _this.get('stats/total_downloads');
+                await _this.put('stats/total_downloads', (existingDlCount !== null ? existingDlCount : 0) + 1);
             }
         });
     }
@@ -443,8 +464,18 @@ class MnemexContract extends Contract {
             access: this.value.access,
             content_hash: this.value.content_hash,
             ts: this.value.ts,
-            tags: tags
+            tags: tags,
+            trust_level: this.value.trust_level || 'unverified',
+            source_url: this.value.source_url || null,
+            source_hash: this.value.source_hash || null,
+            proof: this.value.proof || null
         };
+
+        // Increment total_memories counter only for new entries (not updates)
+        if (existing === null) {
+            const existingCount = await this.get('stats/total_memories');
+            await this.put('stats/total_memories', (existingCount !== null ? existingCount : 0) + 1);
+        }
 
         // All put() calls at the end
         await this.put('mem/' + memoryId, metadata);
@@ -568,9 +599,15 @@ class MnemexContract extends Contract {
     async get_stats() {
         const totalFees = await this.get('stats/total_fees');
         const feeCount = await this.get('stats/fee_count');
+        const totalMemories = await this.get('stats/total_memories');
+        const totalSkills = await this.get('stats/total_skills');
+        const totalDownloads = await this.get('stats/total_downloads');
         console.log('stats:', {
             total_fees: totalFees !== null ? totalFees : '0',
-            fee_count: feeCount !== null ? feeCount : 0
+            fee_count: feeCount !== null ? feeCount : 0,
+            total_memories: totalMemories !== null ? totalMemories : 0,
+            total_skills: totalSkills !== null ? totalSkills : 0,
+            total_downloads: totalDownloads !== null ? totalDownloads : 0
         });
     }
 
@@ -735,6 +772,10 @@ class MnemexContract extends Contract {
         const currentTime = await this.get('currentTime');
         const ts = currentTime !== null ? currentTime : 0;
 
+        // Increment total_skills counter
+        const existingSkillCount = await this.get('stats/total_skills');
+        const newSkillCount = (existingSkillCount !== null ? existingSkillCount : 0) + 1;
+
         // All put() calls at the end
         await this.put('skill/' + skillId, {
             author: this.address,
@@ -752,6 +793,7 @@ class MnemexContract extends Contract {
         });
         await this.put('skill_by_author/' + this.address + '/' + skillId, true);
         await this.put('skill_by_cortex/' + cortex + '/' + skillId, true);
+        await this.put('stats/total_skills', newSkillCount);
     }
 
     /**
@@ -889,6 +931,8 @@ class MnemexContract extends Contract {
         await this.put('balance_nodes', newNodeBal);
         await this.put('stats/total_fees', newTotalFees);
         await this.put('stats/fee_count', newFeeCount);
+        const existingDlCount = await this.get('stats/total_downloads');
+        await this.put('stats/total_downloads', (existingDlCount !== null ? existingDlCount : 0) + 1);
     }
 
     /**
