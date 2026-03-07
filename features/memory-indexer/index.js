@@ -123,6 +123,21 @@ export class MemoryIndexer extends Feature {
             return true;
         }
 
+        // Bulk sync: handle on any channel (like peer_announce)
+        if (msg.type === 'memory_sync_request' && msg.peer_key) {
+            this._handleSyncRequest(msg, connection).catch((err) => {
+                console.error('MemoryIndexer: memory_sync_request error:', err?.message ?? err);
+            });
+            return true;
+        }
+
+        if (msg.type === 'memory_sync_response' && msg.peer_key) {
+            this._handleSyncResponse(msg, connection).catch((err) => {
+                console.error('MemoryIndexer: memory_sync_response error:', err?.message ?? err);
+            });
+            return true;
+        }
+
         // Channel filter: only process cortex/skills messages below
         const isCortex = this.cortexChannels.includes(channel);
         const isSkills = this.enableSkills && channel === this.skillsChannel;
@@ -1039,6 +1054,149 @@ export class MemoryIndexer extends Feature {
 
         this._respond(channel, response, replyFn);
         console.log('MemoryIndexer: skill_search "' + msg.query + '" —', results.length, 'results');
+    }
+
+    /**
+     * Handle a memory_sync_request — respond with metadata of all open memories we have locally.
+     * Gated memories are never included (paid content).
+     */
+    async _handleSyncRequest(msg, _connection) {
+        // Don't respond to our own sync requests
+        if (msg.peer_key === this.peerId) return;
+
+        const memories = [];
+        if (fs.existsSync(this.dataDir)) {
+            const files = fs.readdirSync(this.dataDir).filter(f => f.endsWith('.json'));
+            for (const file of files) {
+                const filePath = path.join(this.dataDir, file);
+                let stored;
+                try {
+                    stored = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+                } catch (_e) { continue; }
+
+                // Only open memories — never sync gated content
+                if (stored.access && stored.access !== 'open') continue;
+
+                memories.push({
+                    memory_id: stored.memory_id,
+                    cortex: stored.cortex,
+                    author: stored.author,
+                    access: 'open',
+                    ts: stored.ts || null,
+                });
+            }
+        }
+
+        if (memories.length === 0) return; // Nothing to share
+
+        const response = {
+            v: 1,
+            type: 'memory_sync_response',
+            memories,
+            peer_key: this.peerId,
+            ts: Date.now(),
+        };
+
+        if (this.peer.sidechannel) {
+            this.peer.sidechannel.broadcast(
+                this.cortexChannels[0] || 'cortex-crypto',
+                JSON.stringify(response)
+            );
+        }
+        console.log('[sync] responded to sync request from ' + String(msg.peer_key).slice(0, 12) + '... — ' + memories.length + ' open memories');
+    }
+
+    /**
+     * Handle a memory_sync_response — diff against local store and fetch missing open memories.
+     */
+    async _handleSyncResponse(msg, _connection) {
+        // Ignore our own responses
+        if (msg.peer_key === this.peerId) return;
+
+        if (!Array.isArray(msg.memories) || msg.memories.length === 0) return;
+
+        const peerShort = String(msg.peer_key).slice(0, 12) + '...';
+        let fetched = 0;
+
+        for (const mem of msg.memories) {
+            if (!mem.memory_id) continue;
+            // Only sync open memories
+            if (mem.access && mem.access !== 'open') continue;
+
+            const filePath = path.join(this.dataDir, mem.memory_id + '.json');
+            if (fs.existsSync(filePath)) continue; // Already have it
+
+            // Fetch via existing relay mechanism
+            const channel = mem.cortex || this.cortexChannels[0] || 'cortex-crypto';
+            try {
+                await this._syncFetchMemory(channel, mem.memory_id);
+                fetched++;
+            } catch (err) {
+                console.warn('[sync] failed to fetch ' + mem.memory_id + ': ' + (err?.message ?? err));
+            }
+        }
+
+        console.log('[sync] ' + fetched + ' memories synced from ' + peerShort);
+    }
+
+    /**
+     * Fetch a single memory via P2P relay for bulk sync purposes.
+     * Returns a promise that resolves when the memory is saved locally.
+     */
+    _syncFetchMemory(channel, memory_id) {
+        return new Promise((resolve, reject) => {
+            const request_id = crypto.randomBytes(16).toString('hex');
+
+            const timer = setTimeout(() => {
+                this.pendingRelays.delete(request_id);
+                reject(new Error('relay timeout'));
+            }, this.relayTimeoutMs);
+
+            this.pendingRelays.set(request_id, {
+                replyFn: (dataStr) => {
+                    try {
+                        const parsed = JSON.parse(dataStr);
+                        if (parsed.found && parsed.data) {
+                            // Save locally like a memory_write
+                            const filePath = path.join(this.dataDir, memory_id + '.json');
+                            const stored = {
+                                memory_id,
+                                cortex: parsed.cortex || channel,
+                                data: parsed.data,
+                                author: parsed.author || null,
+                                ts: parsed.ts || Date.now(),
+                                sig: parsed.sig || null,
+                                access: 'open',
+                                content_hash: parsed.content_hash || null,
+                                stored_at: Date.now(),
+                            };
+                            fs.writeFileSync(filePath, JSON.stringify(stored, null, 2));
+                            console.log('[sync] fetched missing memory: ' + memory_id);
+                            resolve();
+                        } else {
+                            reject(new Error('not found'));
+                        }
+                    } catch (err) {
+                        reject(err);
+                    }
+                },
+                channel,
+                timer,
+                memory_id,
+            });
+
+            // Broadcast relay request
+            const relayMsg = {
+                v: 1,
+                type: 'memory_read_relay',
+                memory_id,
+                request_id,
+                requester_id: this.peerId,
+            };
+            if (this.peer.sidechannel) {
+                this.peer.sidechannel.broadcast(channel, JSON.stringify(relayMsg));
+            }
+        });
     }
 
     /**

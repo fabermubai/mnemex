@@ -951,3 +951,18 @@ const emitPeerAnnounce = () => {
 };
 setTimeout(emitPeerAnnounce, 3_000);
 setInterval(emitPeerAnnounce, 2 * 60 * 1000);
+
+// ── Bulk sync — fetch missing open memories from peers ─────────────────
+// 5s after startup (after peer announce), broadcast a sync request.
+setTimeout(() => {
+  try {
+    const syncMsg = JSON.stringify({
+      v: 1,
+      type: 'memory_sync_request',
+      peer_key: peer.wallet.publicKey,
+      ts: Date.now(),
+    });
+    sidechannel.broadcast(sidechannelEntry, syncMsg).catch(_e => {});
+    console.log('[sync] broadcast memory_sync_request');
+  } catch (_e) { }
+}, 5_000);
