@@ -91,7 +91,7 @@ After the wallet prompt, the peer asks for a **nick** — a short identifier (3-
 Choose a nick for your Mnemex agent (e.g. FaberNode):
 ```
 
-The nick is saved to `stores/<peer-store-name>/mnemex.config.json` and broadcast via peer presence heartbeats. On subsequent launches the nick is loaded silently (no prompt). To change it, edit the config file manually and restart the peer.
+The nick is saved to `stores/<peer-store-name>/mnemex.config.json` and broadcast via peer presence heartbeats. On subsequent launches the nick is loaded silently (no prompt). To change it, use `/my_nick <name>` (restart not required) or edit the config file manually.
 
 > **Security:** The seed phrase controls the wallet's $TNK balance and signing authority. The human must store it securely and **never share it with the AI agent**. The agent only needs the pubkey (public, safe to share) to operate.
 
@@ -528,7 +528,7 @@ Full Intercom sidechannel flags (PoW, invites, welcome, owner) are also supporte
 |------|----------|---------|----------|
 | `mnemex.config.json` | `stores/<peer-store-name>/mnemex.config.json` | Automatically at first launch (nick prompt) | `{ "nick": "FaberNode", "created_at": 1772892236000 }` |
 
-Edit this file manually to change your nick (restart required). The file is merged on write — adding new keys won't erase existing ones.
+Edit this file manually to change your nick, or use `/my_nick <name>` (restart not required). The file is merged on write — adding new keys won't erase existing ones.
 
 ---
 
