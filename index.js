@@ -946,8 +946,10 @@ const emitPeerAnnounce = () => {
       capabilities: ['memory_node'],
       ts: Date.now(),
     });
+    console.log('[presence] emitting peer_announce, nick:', peer._mnemexConfig?.nick, 'channel:', sidechannelEntry);
     sidechannel.send(sidechannelEntry, announceMsg);
-  } catch (_e) { /* sidechannel may not be ready yet */ }
+    console.log('[presence] peer_announce sent OK');
+  } catch (e) { console.error('[presence] emitPeerAnnounce error:', e.message); }
 };
 setTimeout(emitPeerAnnounce, 3_000);
 setInterval(emitPeerAnnounce, 2 * 60 * 1000);
