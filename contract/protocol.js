@@ -208,6 +208,10 @@ class MnemexProtocol extends Protocol{
      */
     async printOptions(){
         console.log(' ');
+        console.log('- Mnemex Network Commands:');
+        console.log('- /peers');
+        console.log('    Show online agents (presence heartbeat, last 5 minutes).');
+        console.log(' ');
         console.log('- Mnemex Memory Commands:');
         console.log('- /register_memory --memory_id "<id>" --cortex "<name>" --content_hash "<sha256>" [--access "open"|"gated"] [--tags "tag1,tag2"] [--ts <ms>]');
         console.log('    Register a memory entry on-chain (submits MSB TX, costs 0.03 $TNK).');
@@ -286,6 +290,33 @@ class MnemexProtocol extends Protocol{
         await super.tokenizeInput(input);
 
         // ==================== Mnemex Commands ====================
+
+        if (this.input.startsWith("/peers")) {
+            const indexer = this.peer._memoryIndexer;
+            if (!indexer) {
+                console.log('MemoryIndexer not available.');
+                return;
+            }
+            const onlinePeers = indexer.getOnlinePeers();
+            const selfKey = this.peer.wallet.publicKey;
+            const selfNick = indexer.presenceMap.get(selfKey)?.nick || null;
+            console.log('');
+            console.log('Online Agents (' + (onlinePeers.length + 1) + '):');
+            console.log('  ' + selfKey.slice(0, 12) + '...  ' + (this.peer.wallet.address || '?') + '  ' + (selfNick ? selfNick + '  ' : '') + '(self)');
+            if (onlinePeers.length === 0) {
+                console.log('  (no other agents seen in the last 5 minutes)');
+            } else {
+                for (const p of onlinePeers) {
+                    const ago = Math.round((Date.now() - p.lastSeen) / 1000);
+                    const agoStr = ago < 60 ? ago + 's ago' : Math.round(ago / 60) + 'min ago';
+                    const nick = p.nick ? p.nick + '  ' : '';
+                    const caps = p.capabilities.length > 0 ? '[' + p.capabilities.join(', ') + ']  ' : '';
+                    console.log('  ' + p.peerKey.slice(0, 12) + '...  ' + (p.address || '?') + '  ' + nick + caps + 'last seen: ' + agoStr);
+                }
+            }
+            console.log('');
+            return;
+        }
 
         if (this.input.startsWith("/register_memory")) {
             const args = this.parseArgs(input);

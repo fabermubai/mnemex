@@ -33,6 +33,10 @@ export class MemoryIndexer extends Feature {
         this.pendingRelays = new Map(); // request_id → { replyFn, channel, timer }
         this.relayTimeoutMs = options.relayTimeoutMs || 10_000; // 10 seconds
         this.peerId = peer.wallet?.publicKey || null;
+
+        // Presence tracking
+        this.presenceMap = new Map(); // peerKey → { address, nick, capabilities, lastSeen, ts }
+        this.presenceTTL = 10 * 60 * 1000; // 10 minutes
     }
 
     /**
@@ -71,9 +75,20 @@ export class MemoryIndexer extends Feature {
         if (this.enableSkills) {
             console.log('MemoryIndexer: skills channel:', this.skillsChannel);
         }
+
+        // Presence cleanup every 5 minutes (unref so it doesn't prevent process exit in tests)
+        this._presenceCleanupInterval = setInterval(() => {
+            const cutoff = Date.now() - this.presenceTTL;
+            for (const [key, entry] of this.presenceMap) {
+                if (entry.lastSeen < cutoff) this.presenceMap.delete(key);
+            }
+        }, 5 * 60 * 1000);
+        this._presenceCleanupInterval.unref();
     }
 
-    async stop() { }
+    async stop() {
+        if (this._presenceCleanupInterval) clearInterval(this._presenceCleanupInterval);
+    }
 
     /**
      * Handle an incoming sidechannel message.
@@ -84,10 +99,6 @@ export class MemoryIndexer extends Feature {
      * @param connection — the Hyperswarm connection object
      */
     handleMessage(channel, payload, connection) {
-        const isCortex = this.cortexChannels.includes(channel);
-        const isSkills = this.enableSkills && channel === this.skillsChannel;
-        if (!isCortex && !isSkills) return false;
-
         let msg;
         // Sidechannel wraps messages in an envelope: { type: "sidechannel", message: <inner>, ... }
         // Extract the inner message before parsing.
@@ -105,6 +116,17 @@ export class MemoryIndexer extends Feature {
         }
 
         if (!msg || msg.v !== 1) return false;
+
+        // Presence: handle peer_announce on any channel (including entry channel 0000mnemex)
+        if (msg.type === 'peer_announce' && msg.peer_key) {
+            this._handlePeerAnnounce(msg, connection);
+            return true;
+        }
+
+        // Channel filter: only process cortex/skills messages below
+        const isCortex = this.cortexChannels.includes(channel);
+        const isSkills = this.enableSkills && channel === this.skillsChannel;
+        if (!isCortex && !isSkills) return false;
 
         if (msg.type === 'memory_write') {
             this._handleMemoryWrite(channel, msg).catch((err) => {
@@ -972,6 +994,42 @@ export class MemoryIndexer extends Feature {
 
         this._respond(channel, response, replyFn);
         console.log('MemoryIndexer: skill_search "' + msg.query + '" —', results.length, 'results');
+    }
+
+    /**
+     * Handle a peer_announce message — update the presence map.
+     */
+    _handlePeerAnnounce(msg, _connection) {
+        const peerKey = msg.peer_key;
+        if (!peerKey || typeof peerKey !== 'string') return;
+        // Don't track self
+        if (peerKey === this.peerId) return;
+
+        this.presenceMap.set(peerKey, {
+            address: msg.address || null,
+            nick: msg.nick || null,
+            capabilities: Array.isArray(msg.capabilities) ? msg.capabilities : [],
+            lastSeen: Date.now(),
+            ts: msg.ts || Date.now(),
+        });
+        const nick = msg.nick ? ` (${msg.nick})` : '';
+        console.log('[presence] ' + peerKey.slice(0, 12) + '...' + nick);
+    }
+
+    /**
+     * Get online peers (seen within the last 5 minutes).
+     * @returns {Array<{peerKey, address, nick, capabilities, lastSeen}>}
+     */
+    getOnlinePeers() {
+        const cutoff = Date.now() - 5 * 60 * 1000;
+        const peers = [];
+        for (const [peerKey, entry] of this.presenceMap) {
+            if (entry.lastSeen >= cutoff) {
+                peers.push({ peerKey, ...entry });
+            }
+        }
+        peers.sort((a, b) => b.lastSeen - a.lastSeen);
+        return peers;
     }
 }
 

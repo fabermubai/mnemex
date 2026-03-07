@@ -19,6 +19,7 @@ import { Timer } from './features/timer/index.js';
 import { MemoryIndexer } from './features/memory-indexer/index.js';
 import Sidechannel from './features/sidechannel/index.js';
 import ScBridge from './features/sc-bridge/index.js';
+import { loadConfig, saveConfig } from './lib/config.js';
 
 const { env, storeLabel, flags } = getPearRuntime();
 
@@ -444,6 +445,28 @@ if (firstLaunch) {
   await ensureKeypairFile(msbConfig.keyPairPath, walletRl);
   await ensureKeypairFile(peerConfig.keyPairPath, walletRl);
 }
+// Nick prompt on first launch (before closing readline)
+const peerStorePath = path.join(peerStoresDirectory, peerStoreNameRaw);
+const mnemexConfig = loadConfig(peerStorePath);
+if (!mnemexConfig.nick && walletRl) {
+  const nickPromise = new Promise((resolve) => {
+    const onLine = (input) => {
+      const nick = (input || '').trim();
+      if (/^[a-zA-Z0-9_-]{3,20}$/.test(nick)) {
+        walletRl.off('line', onLine);
+        resolve(nick);
+      } else {
+        console.log('Invalid nick. Use 3-20 alphanumeric characters, dashes, or underscores.');
+        console.log('Choose a nick for your Mnemex agent (e.g. FaberNode):');
+      }
+    };
+    console.log('Choose a nick for your Mnemex agent (e.g. FaberNode):');
+    walletRl.on('line', onLine);
+  });
+  const nick = await nickPromise;
+  saveConfig(peerStorePath, { nick, created_at: Date.now() });
+  console.log('Nick saved:', nick);
+}
 if (walletRl) walletRl.close();
 
 console.log('=============== STARTING MSB ===============');
@@ -476,7 +499,6 @@ console.log('');
 console.log('==================== MNEMEX ====================');
 const msbChannel = b4a.toString(msbConfig.channel, 'utf8');
 const msbStorePath = path.join(msbStoresDirectory, msbStoreName);
-const peerStorePath = path.join(peerStoresDirectory, peerStoreNameRaw);
 const peerWriterKey = peer.writerLocalKey ?? peer.base?.local?.key?.toString('hex') ?? null;
 console.log('MSB network bootstrap:', msbBootstrapHex);
 console.log('MSB channel:', msbChannel);
@@ -906,3 +928,24 @@ try {
     console.error('Auto-add writers failed:', err?.message ?? err);
   }
 }
+
+// ── Presence heartbeat ─────────────────────────────────────────────────
+// Broadcast peer_announce on the entry sidechannel so other agents know
+// we're online.  First announce after 3s (let sidechannel connect), then
+// every 2 minutes.
+const emitPeerAnnounce = () => {
+  try {
+    const announceMsg = JSON.stringify({
+      v: 1,
+      type: 'peer_announce',
+      peer_key: peer.wallet.publicKey,
+      address: peer.wallet.address || null,
+      nick: mnemexConfig.nick || null,
+      capabilities: ['memory_node'],
+      ts: Date.now(),
+    });
+    sidechannel.send(sidechannelEntry, announceMsg);
+  } catch (_e) { /* sidechannel may not be ready yet */ }
+};
+setTimeout(emitPeerAnnounce, 3_000);
+setInterval(emitPeerAnnounce, 2 * 60 * 1000);
