@@ -930,7 +930,7 @@ sidechannel
           peer_key: peer.wallet.publicKey,
           ts: Date.now(),
         });
-        sidechannel.broadcast(sidechannelEntry, syncMsg).catch(_e => {});
+        sidechannel.broadcast(sidechannelEntry, syncMsg);
         console.log('[sync] broadcast memory_sync_request');
       } catch (_e) { }
     }, 5_000);
