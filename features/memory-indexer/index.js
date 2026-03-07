@@ -606,8 +606,36 @@ export class MemoryIndexer extends Feature {
     async _handleSkillPublish(channel, msg) {
         const { skill_id, name, description, cortex, price, version, package: pkg, author, ts, sig } = msg;
 
-        if (!skill_id || !name || !description || !cortex || !price || !version || !pkg || !author) {
+        if (!skill_id || !name || !description || !cortex || (price == null || price === '') || !version || !pkg || !author) {
             console.log('MemoryIndexer: skill_publish rejected — missing required fields');
+            return;
+        }
+
+        // Validate field constraints
+        if (String(name).length > 128) {
+            console.log('MemoryIndexer: skill_publish rejected — name exceeds 128 chars');
+            return;
+        }
+        if (String(description).length > 512) {
+            console.log('MemoryIndexer: skill_publish rejected — description exceeds 512 chars');
+            return;
+        }
+        if (!/^\d+\.\d+\.\d+$/.test(String(version))) {
+            console.log('MemoryIndexer: skill_publish rejected — version must be semver (x.y.z)');
+            return;
+        }
+
+        // Validate package format
+        if (pkg.format && pkg.format !== 'mnemex-skill-v1') {
+            console.log('MemoryIndexer: skill_publish rejected — unsupported format:', pkg.format);
+            return;
+        }
+        if (pkg.entry_point != null && (typeof pkg.entry_point !== 'string' || !pkg.entry_point.trim())) {
+            console.log('MemoryIndexer: skill_publish rejected — entry_point must be a non-empty string');
+            return;
+        }
+        if (pkg.tags != null && (!Array.isArray(pkg.tags) || !pkg.tags.every(t => typeof t === 'string'))) {
+            console.log('MemoryIndexer: skill_publish rejected — tags must be an array of strings');
             return;
         }
 
@@ -693,8 +721,9 @@ export class MemoryIndexer extends Feature {
         const stored = JSON.parse(raw);
 
         // Payment gate
-        if (this.requirePayment && !hasPayment) {
-            const skillPrice = stored.price || this.defaultFeeAmount;
+        const skillPrice = (stored.price != null && stored.price !== '') ? stored.price : this.defaultFeeAmount;
+        const isFreeSkill = BigInt(skillPrice) === 0n;
+        if (this.requirePayment && !hasPayment && !isFreeSkill) {
             const total = BigInt(skillPrice);
             const creatorShare = (total * 80n / 100n).toString();
             const nodeShare = (total * 20n / 100n).toString();
@@ -758,6 +787,7 @@ export class MemoryIndexer extends Feature {
     async _handleSkillCatalog(channel, msg) {
         const cortexFilter = msg.cortex || null;
         const skills = [];
+        const baseView = this.peer?.base?.view || null;
 
         if (fs.existsSync(this.skillsDir)) {
             const files = fs.readdirSync(this.skillsDir).filter(f => f.endsWith('.json'));
@@ -766,6 +796,14 @@ export class MemoryIndexer extends Feature {
                 const raw = fs.readFileSync(filePath, 'utf8');
                 const stored = JSON.parse(raw);
                 if (cortexFilter && stored.cortex !== cortexFilter) continue;
+                let downloads = 0;
+                if (baseView) {
+                    try {
+                        const entry = await baseView.get('skill/' + stored.skill_id);
+                        if (entry?.value?.downloads != null) downloads = entry.value.downloads;
+                        else if (entry?.downloads != null) downloads = entry.downloads;
+                    } catch (_e) { /* fallback to 0 */ }
+                }
                 skills.push({
                     skill_id: stored.skill_id,
                     name: stored.name,
@@ -773,7 +811,7 @@ export class MemoryIndexer extends Feature {
                     cortex: stored.cortex,
                     price: stored.price,
                     version: stored.version,
-                    downloads: 0 // local node doesn't track downloads, contract does
+                    downloads: downloads
                 });
             }
         }
@@ -968,7 +1006,14 @@ export class MemoryIndexer extends Feature {
 
                 const nameLower = (stored.name || '').toLowerCase();
                 const descLower = (stored.description || '').toLowerCase();
-                if (nameLower.includes(query) || descLower.includes(query)) {
+                const cortexLower = (stored.cortex || '').toLowerCase();
+                const authorLower = (stored.author || '').toLowerCase();
+                const sidLower = (stored.skill_id || '').toLowerCase();
+                const tags = Array.isArray(stored.package?.tags) ? stored.package.tags.map(t => String(t).toLowerCase()) : [];
+                const matched = nameLower.includes(query) || descLower.includes(query) ||
+                    cortexLower.includes(query) || authorLower === query || sidLower === query ||
+                    tags.some(t => t.includes(query));
+                if (matched) {
                     results.push({
                         skill_id: stored.skill_id,
                         name: stored.name,
