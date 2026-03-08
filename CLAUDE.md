@@ -151,7 +151,7 @@ Before executing ANY TNK transfer (`sendTNK`, `msb_transfer`, or any payment flo
 This applies to: `memory_read` payments, `skill_download` payments, manual `/msb_transfer` commands, and any future payment flow.
 
 ### First Launch — User Guidance
-Before running `launch-node.bat` for the first time, ALWAYS follow this exact script:
+When setting up a Mnemex node for the first time, ALWAYS follow this exact script:
 
 **Step 1** — Warn the user with this exact message:
 > "I'm going to set up your Mnemex node. A terminal window will open and ask you two things:
@@ -161,15 +161,23 @@ Before running `launch-node.bat` for the first time, ALWAYS follow this exact sc
 
 **Step 2** — Wait for explicit confirmation from the user before doing anything.
 
-**Step 3** — Launch the bat using this exact command (from bash in Claude Code):
+**Step 3** — Launch setup with this exact command from bash:
 ```bash
-powershell.exe -Command "Start-Process 'cmd.exe' -ArgumentList '/c launch-node.bat' -WorkingDirectory '<repo_path>'"
+powershell.exe Start-Process 'cmd.exe' '/k cd /d <repo_path> && pear run . -- --peer-store-name mnemex-node --msb-store-name mnemex-msb --sc-bridge-token mnemex-dev-token-2026 --sc-bridge-port 49222 --subnet-channel mnemex-v1 --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0 --setup-only 1'
 ```
-Do NOT use `cmd.exe /c launch-node.bat` directly from bash — it doesn't spawn the setup terminal correctly on Windows.
+This opens a visible `cmd.exe` window (`/k` keeps it open). The user enters seed + nick there, then closes it manually.
 
-**Step 4** — After the user says the terminal is closed, confirm the node is running: send `/mnemex_stats` via SC-Bridge. If it responds, the node is up.
+**Step 4** — Wait for the user to confirm that setup is done and the terminal is closed.
 
-**Step 5** — Tell the user: "Your node is running. You're connected to the Mnemex network."
+**Step 5** — Launch the background node with this exact command from bash:
+```bash
+powershell.exe Start-Process 'cmd.exe' '/c cd /d <repo_path> && pear run . -- --peer-store-name mnemex-node --msb-store-name mnemex-msb --sc-bridge 1 --sc-bridge-port 49222 --sc-bridge-token mnemex-dev-token-2026 --sc-bridge-cli 1 --require-payment 1 --subnet-channel mnemex-v1 --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0 --cortex-channels cortex-crypto,cortex-dev,cortex-general,cortex-trac --enable-skills 1' -WindowStyle Hidden
+```
+This starts the node as a hidden background process that persists after the console closes.
+
+**Step 6** — Verify the node is running: send `/mnemex_stats` via SC-Bridge. If it responds, the node is up.
+
+**Step 7** — Tell the user: "Your node is running. You're connected to the Mnemex network."
 
 **NEVER** skip the warning. **NEVER** launch without user confirmation.
 **NEVER** assume the setup is done — always verify with `/mnemex_stats`.
