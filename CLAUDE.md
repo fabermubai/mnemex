@@ -158,7 +158,7 @@ Before running `launch-node.bat` for the first time:
 
 ### Agent Interaction Flow
 - **First launch only:** `launch-node.bat` detects missing keypair → runs `pear run . -- --setup-only` (interactive terminal for seed + nick) → then starts node in background.
-- **Subsequent launches:** node starts in background immediately via `start /B pear run .`, logs written to `mnemex.log`.
+- **Subsequent launches:** node starts in a minimized window via `start /min`, logs written to `mnemex.log`. The process persists after the launching console closes.
 - **Reading logs:** `tail -f mnemex.log` or `type mnemex.log` — all `console.log` output goes to this file.
 - **Interacting via SC-Bridge:** connect to `ws://127.0.0.1:49222?token=<sc-bridge-token>`. Send JSON messages (`memory_write`, `memory_read`, `chat_send`, `cli`, etc.). Auth required: `{ type: "auth", token: "..." }`.
 - **CLI via SC-Bridge:** send `{ type: "cli", command: "/mnemex_stats" }` — requires `--sc-bridge-cli 1`.
