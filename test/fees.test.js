@@ -478,6 +478,18 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
                 ts: 1708617600000,
             });
 
+            // Pre-store a public memory for free-read tests
+            await indexer._handleMemoryWrite('cortex-crypto', {
+                v: 1,
+                type: 'memory_write',
+                memory_id: 'public-mem-001',
+                cortex: 'crypto',
+                data: { key: 'BTC/USD', value: 97000 },
+                author: 'dd'.repeat(32),
+                access: 'public',
+                ts: 1708617600000,
+            });
+
             // Reset calls after setup
             appendCalls = [];
             broadcastCalls = [];
@@ -616,6 +628,40 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
             const response = JSON.parse(broadcastCalls[0].message);
             assert.equal(response.type, 'memory_response');
             assert.equal(response.found, false);
+        });
+
+        it('public memory served without payment', async () => {
+            broadcastCalls = [];
+            const replies = [];
+
+            await indexer._handleMemoryRead('cortex-crypto', {
+                v: 1,
+                type: 'memory_read',
+                memory_id: 'public-mem-001',
+            }, (data) => replies.push(JSON.parse(data)));
+
+            assert.equal(replies.length, 1);
+            const response = replies[0];
+            assert.equal(response.type, 'memory_response');
+            assert.equal(response.found, true);
+            assert.deepEqual(response.data, { key: 'BTC/USD', value: 97000 });
+        });
+
+        it('public memory read does not record fee', async () => {
+            appendCalls = [];
+            const replies = [];
+
+            await indexer._handleMemoryRead('cortex-crypto', {
+                v: 1,
+                type: 'memory_read',
+                memory_id: 'public-mem-001',
+            }, (data) => replies.push(JSON.parse(data)));
+
+            const response = replies[0];
+            assert.equal(response.fee_recorded, false);
+            // No record_fee append should have been triggered
+            const feeAppends = appendCalls.filter(c => c.key === 'record_fee');
+            assert.equal(feeAppends.length, 0);
         });
 
         it('should use custom price for gated memory with price field', async () => {

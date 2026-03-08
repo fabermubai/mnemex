@@ -132,7 +132,9 @@ async function cycle() {
       memory_id: memoryId,
       cortex: CORTEX,
       data: { symbol: info.pair, value, source: 'binance', ts_fetch: now },
-      access: 'open',
+      // "public" = free read, no TNK fee — use for commodity data available freely on internet
+      // Use "open" (0.03 TNK) for your own analysis, "gated" for premium content
+      access: 'public',
       tags: info.tags,
       trust_level: 'unverified',
       ts: now,

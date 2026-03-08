@@ -72,6 +72,18 @@ describe('Bulk sync — memory_sync_request / memory_sync_response', () => {
             content_hash: 'hash3',
             stored_at: Date.now(),
         }, null, 2));
+
+        fs.writeFileSync(path.join(TEST_DATA_DIR, 'public-memory-1.json'), JSON.stringify({
+            memory_id: 'public-memory-1',
+            cortex: 'cortex-crypto',
+            data: { key: 'BTC/USD', value: 97000 },
+            author: PEER_ID,
+            ts: 1700000003000,
+            sig: null,
+            access: 'public',
+            content_hash: 'hash4',
+            stored_at: Date.now(),
+        }, null, 2));
     });
 
     beforeEach(() => {
@@ -91,7 +103,7 @@ describe('Bulk sync — memory_sync_request / memory_sync_response', () => {
 
     // ==================== _handleSyncRequest ====================
 
-    it('_handleSyncRequest returns only open memories', async () => {
+    it('_handleSyncRequest returns open and public memories', async () => {
         await indexer._handleSyncRequest(
             { v: 1, type: 'memory_sync_request', peer_key: OTHER_PEER_ID, ts: Date.now() },
             null
@@ -102,14 +114,9 @@ describe('Bulk sync — memory_sync_request / memory_sync_response', () => {
         assert.equal(response.type, 'memory_sync_response');
         assert.equal(response.peer_key, PEER_ID);
 
-        // Should include the 2 open memories, NOT the gated one
+        // Should include 2 open + 1 public memories, NOT the gated one
         const ids = response.memories.map(m => m.memory_id).sort();
-        assert.deepEqual(ids, ['open-memory-1', 'open-memory-2']);
-
-        // Every entry should have access: 'open'
-        for (const mem of response.memories) {
-            assert.equal(mem.access, 'open');
-        }
+        assert.deepEqual(ids, ['open-memory-1', 'open-memory-2', 'public-memory-1']);
     });
 
     it('_handleSyncRequest excludes gated memories', async () => {
@@ -121,6 +128,17 @@ describe('Bulk sync — memory_sync_request / memory_sync_response', () => {
         const response = JSON.parse(broadcastCalls[0].message);
         const ids = response.memories.map(m => m.memory_id);
         assert.ok(!ids.includes('gated-memory-1'), 'gated memory should not be included');
+    });
+
+    it('_handleSyncRequest includes public memories in bulk sync', async () => {
+        await indexer._handleSyncRequest(
+            { v: 1, type: 'memory_sync_request', peer_key: OTHER_PEER_ID, ts: Date.now() },
+            null
+        );
+
+        const response = JSON.parse(broadcastCalls[0].message);
+        const ids = response.memories.map(m => m.memory_id);
+        assert.ok(ids.includes('public-memory-1'), 'public memory should be included in sync');
     });
 
     it('_handleSyncRequest ignores own peer_key', async () => {

@@ -407,6 +407,25 @@ export class MemoryIndexer extends Feature {
             return;
         }
 
+        // Public memories: always free, no payment gate
+        if (stored.access === 'public') {
+            const response = {
+                v: 1,
+                type: 'memory_response',
+                memory_id,
+                found: true,
+                data: stored.data,
+                cortex: stored.cortex,
+                author: stored.author,
+                ts: stored.ts,
+                content_hash: stored.content_hash,
+                fee_recorded: false
+            };
+            this._respond(channel, response, replyFn);
+            console.log('MemoryIndexer: public read (free) for', memory_id);
+            return;
+        }
+
         // Payment gate: no payment txids → return payment_required with split info
         if (this.requirePayment && !hasPayment) {
             const feeAmount = (stored.access === 'gated' && stored.price) ? stored.price : this.defaultFeeAmount;
@@ -567,7 +586,7 @@ export class MemoryIndexer extends Feature {
         if (msg.is_sync === true) {
             const raw = fs.readFileSync(filePath, 'utf8');
             const stored = JSON.parse(raw);
-            if (stored.access === 'open' || !stored.access) {
+            if (stored.access === 'open' || stored.access === 'public' || !stored.access) {
                 const relayResponse = {
                     v: 1,
                     type: 'memory_read_relay_response',
@@ -1110,8 +1129,8 @@ export class MemoryIndexer extends Feature {
                     stored = JSON.parse(fs.readFileSync(filePath, 'utf8'));
                 } catch (_e) { continue; }
 
-                // Only open memories — never sync gated content
-                if (stored.access && stored.access !== 'open') continue;
+                // Only open/public memories — never sync gated content
+                if (stored.access && stored.access !== 'open' && stored.access !== 'public') continue;
 
                 memories.push({
                     memory_id: stored.memory_id,
@@ -1156,8 +1175,8 @@ export class MemoryIndexer extends Feature {
 
         for (const mem of msg.memories) {
             if (!mem.memory_id) continue;
-            // Only sync open memories
-            if (mem.access && mem.access !== 'open') continue;
+            // Only sync open/public memories
+            if (mem.access && mem.access !== 'open' && mem.access !== 'public') continue;
 
             const filePath = path.join(this.dataDir, mem.memory_id + '.json');
             if (fs.existsSync(filePath)) continue; // Already have it
