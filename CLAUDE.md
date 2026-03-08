@@ -161,11 +161,12 @@ When setting up a Mnemex node for the first time, ALWAYS follow this exact scrip
 
 **Step 2** — Wait for explicit confirmation from the user before doing anything.
 
-**Step 3** — Launch setup with this exact command from bash:
+**Step 3** — Run this exact command from bash (bypasses launch-node.bat entirely):
 ```bash
-powershell.exe Start-Process 'cmd.exe' '/k cd /d <repo_path> && pear run . -- --peer-store-name mnemex-node --msb-store-name mnemex-msb --sc-bridge-token mnemex-dev-token-2026 --sc-bridge-port 49222 --subnet-channel mnemex-v1 --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0 --setup-only 1'
+powershell.exe Start-Process 'cmd.exe' '/k cd /d <repo_path> && pear run . -- --peer-store-name mnemex-node --msb-store-name mnemex-msb --sc-bridge-token mnemex-dev-token-2026 --sc-bridge-port 49222 --subnet-channel mnemex-v1 --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0 --setup-only'
 ```
-This opens a visible `cmd.exe` window (`/k` keeps it open). The user enters seed + nick there, then closes it manually.
+Note: `/k` keeps the window open. User fills in seed + nick, then closes manually.
+Do NOT use `launch-node.bat` in Step 3 — the nested `start /wait` inside the bat does not work when launched via PowerShell `Start-Process`. `launch-node.bat` works only when double-clicked by a human directly.
 
 **Step 4** — Wait for the user to confirm that setup is done and the terminal is closed.
 
