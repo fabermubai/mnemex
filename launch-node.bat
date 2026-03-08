@@ -5,12 +5,11 @@ set PEER_STORE=mnemex-admin
 set MSB_STORE=mnemex-msb
 set FLAGS=--peer-store-name %PEER_STORE% --msb-store-name %MSB_STORE% --subnet-channel mnemex-v1 --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0 --sc-bridge 1 --sc-bridge-port 49222 --sc-bridge-token mnemex-dev-token-2026 --require-payment 1 --cortex-channels cortex-crypto,cortex-dev,cortex-general,cortex-trac --enable-skills 1 --sc-bridge-cli 1
 
-REM First launch detection: keypair missing → interactive setup
+REM First launch: open a visible terminal for interactive seed + nick setup, wait for it to finish
 if not exist "stores\%PEER_STORE%\db\keypair.json" (
-  echo First launch — interactive setup required.
-  pear run . -- %FLAGS% --setup-only
-  echo.
-  echo Setup complete. Starting Mnemex in background...
+  echo First launch — a setup window will open. Enter your seed phrase and nick there.
+  start "Mnemex Setup" /wait cmd /c "cd /d "%~dp0" && pear run . -- %FLAGS% --setup-only && echo. && echo Setup complete. Press any key to close. && pause >nul"
+  echo Setup done. Starting Mnemex in background...
 )
 
 REM Start as a hidden background process (persists after this window closes)
