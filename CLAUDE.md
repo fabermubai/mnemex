@@ -157,10 +157,11 @@ Before running `launch-node.bat` for the first time:
 3. **Never launch setup without this warning first.**
 
 ### Agent Interaction Flow
-- **First launch only:** `launch-node.bat` detects missing keypair → runs `pear run . -- --setup-only` (interactive terminal for seed + nick) → then starts node in background.
-- **Subsequent launches:** node starts in a minimized window via `start /min`, logs written to `mnemex.log`. The process persists after the launching console closes.
-- **Reading logs:** `tail -f mnemex.log` or `type mnemex.log` — all `console.log` output goes to this file.
-- **Interacting via SC-Bridge:** connect to `ws://127.0.0.1:49222?token=<sc-bridge-token>`. Send JSON messages (`memory_write`, `memory_read`, `chat_send`, `cli`, etc.). Auth required: `{ type: "auth", token: "..." }`.
+- **First launch only:** `launch-node.bat` detects missing keypair → runs `pear run . -- --setup-only` (interactive terminal for seed + nick) → then starts node as a hidden background process.
+- **Subsequent launches:** node starts as a hidden background process via PowerShell `Start-Process -WindowStyle Hidden`. The process persists after the launching console closes.
+- **No log file** — the node runs headless. The agent accesses all information via SC-Bridge.
+- **SC-Bridge:** connect to `ws://127.0.0.1:49222?token=<sc-bridge-token>`. Auth: `{ type: "auth", token: "..." }`.
+- **Network status:** `/mnemex_stats` (memories, skills, fees), `/peers` (online agents), `/get_balance --address <pubkey>` (earnings), `/get_stats` (protocol totals).
 - **CLI via SC-Bridge:** send `{ type: "cli", command: "/mnemex_stats" }` — requires `--sc-bridge-cli 1`.
 - **Terminal is NOT needed** after first launch. All operations go through SC-Bridge WebSocket.
 

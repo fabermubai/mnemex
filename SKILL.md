@@ -48,12 +48,11 @@ npm install
 launch-node.bat
 ```
 
-- **First launch:** detects missing keypair → runs `pear run . -- --setup-only` (interactive prompt for seed + nick) → then starts node in background.
-- **Subsequent launches:** starts directly in background via `pear run .`. No terminal needed.
-- **Logs:** `pear run .` outputs to `mnemex.log` via redirect. Read with `type mnemex.log` or `tail -f mnemex.log`.
-- **SC-Bridge:** WebSocket at `ws://127.0.0.1:49222?token=mnemex-dev-token-2026`.
+- **First launch:** detects missing keypair → runs `pear run . -- --setup-only` (interactive prompt for seed + nick) → then starts node as a hidden background process.
+- **Subsequent launches:** starts directly as a hidden background process. No terminal needed.
+- **SC-Bridge:** WebSocket at `ws://127.0.0.1:49222?token=mnemex-dev-token-2026`. Once running, interact via SC-Bridge or ask your AI agent to query `/mnemex_stats` and `/peers`.
 
-`launch-node.bat` handles everything: first-launch interactive setup (seed + nick), then background start with logs. Edit the `PEER_STORE` and `MSB_STORE` variables at the top of the bat file to set your store names — each node on the network must use a unique store name to avoid Autobase conflicts.
+`launch-node.bat` handles everything: first-launch interactive setup (seed + nick), then background start. Edit the `PEER_STORE` and `MSB_STORE` variables at the top of the bat file to set your store names — each node on the network must use a unique store name to avoid Autobase conflicts.
 
 > **SC-Bridge token:** defined in the bat file via `--sc-bridge-token`. Change it to a random string for production.
 
@@ -103,18 +102,18 @@ The nick is saved to `stores/<peer-store-name>/mnemex.config.json` and broadcast
 
 > **Existing nodes with two different seeds:** If both keypair files already exist from a previous install, they are kept as-is. The single-seed flow only applies to fresh installs where neither file exists.
 
-**3. Verify the node is running** by checking `mnemex.log`:
-```bash
-tail -20 mnemex.log
+**3. Verify the node is running** via SC-Bridge. Connect to `ws://127.0.0.1:49222?token=<your-token>`, authenticate, then send:
+```json
+{ "type": "cli", "command": "/mnemex_stats" }
 ```
-Look for three public identifiers in the logs:
+The `hello` message on connect gives you your node's identity:
 ```
-Peer pubkey (hex):      <64-char hex>   ← use as "author" in memory_write
-Peer trac address:      trac1...        ← your $TNK payment address
-Peer writer key (hex):  <64-char hex>   ← give this to admin for /add_writer
+peer:    <64-char hex>   ← use as "author" in memory_write
+address: trac1...        ← your $TNK payment address
 ```
+To get your writer key (needed for `/add_writer`), send `{ "type": "cli", "command": "/connections" }`.
 
-**4. Connect your agent code** to the peer's SC-Bridge at `ws://127.0.0.1:49222` and start sending messages (see examples below). After first launch, interact with Mnemex via SC-Bridge or ask your AI agent to do it for you — no terminal needed.
+**4. Interact via SC-Bridge** — send JSON messages (`memory_write`, `memory_read`, `cli`, etc.). After first launch, no terminal is needed — everything goes through SC-Bridge WebSocket.
 
 > **Why can't I just connect to a remote SC-Bridge?**
 > Mnemex is peer-to-peer. When you send a `memory_write` via SC-Bridge, your peer broadcasts it to the network. But `broadcast()` is remote-only — your own peer's MemoryIndexer never sees it. Other peers' MemoryIndexers DO receive it and index it. If you connect to someone else's SC-Bridge instead of running your own peer, the message goes out from their peer — but their own MemoryIndexer won't process it either (remote-only). You need your own peer so that OTHER peers on the network can index your data.
