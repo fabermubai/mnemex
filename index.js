@@ -804,6 +804,7 @@ if (scBridge) {
           access: message.access || 'open',
           ts: message.ts || Date.now(),
           tags: message.tags || undefined,
+          price: message.price || undefined,
           sig: message.sig || undefined,
         };
         const origScW = memoryIndexer.peer.sidechannel;
