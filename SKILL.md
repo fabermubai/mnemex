@@ -19,7 +19,7 @@ Before cloning, verify these system requirements. If any is missing, install it 
 
 | Requirement | Min Version | Install | Verify |
 |---|---|---|---|
-| **Node.js** | 22.x LTS | [nodejs.org](https://nodejs.org/) — pick the 22.x LTS line. **Avoid 24.x** (native-addon incompatibilities with rocksdb-native). | `node -v` → `v22.x.x` |
+| **Node.js** | 22.x LTS | [nodejs.org](https://nodejs.org/) — pick the 22.x LTS line. v24 works but is untested. | `node -v` → `v22.x.x` |
 | **npm** | (bundled) | Comes with Node.js. | `npm -v` |
 | **Pear Runtime** | latest | `npm install -g pear` | `pear -v` |
 
@@ -28,7 +28,7 @@ Before cloning, verify these system requirements. If any is missing, install it 
 node -v && npm -v && pear -v
 ```
 
-> **First launch — human interaction required.** The first launch triggers an interactive wallet prompt (seed phrase + nick). `launch-node.bat` handles this automatically: it detects the missing keypair, runs `--setup-only` (interactive), then starts the node in background. **Subsequent launches skip the prompt entirely** and start in background with logs written to `mnemex.log`. After first launch, no terminal is needed — interact via SC-Bridge WebSocket.
+> **First launch — human interaction required.** The first launch triggers an interactive wallet prompt (seed phrase + nick). `launch-node.bat` handles this automatically: it detects the missing keypair, runs `pear run . -- --setup-only` (interactive), then starts the node in background. **Subsequent launches skip the prompt entirely** and start in background. After first launch, no terminal is needed — interact via SC-Bridge WebSocket.
 
 ## Quick Start
 
@@ -48,24 +48,33 @@ npm install
 launch-node.bat
 ```
 
-- **First launch:** detects missing keypair → opens interactive prompt for seed + nick → then starts node in background.
-- **Subsequent launches:** starts directly in background. No terminal needed.
-- **Logs:** written to `mnemex.log`. Read with `type mnemex.log` or `tail -f mnemex.log`.
+- **First launch:** detects missing keypair → runs `pear run . -- --setup-only` (interactive prompt for seed + nick) → then starts node in background.
+- **Subsequent launches:** starts directly in background via `pear run .`. No terminal needed.
+- **Logs:** `pear run .` outputs to `mnemex.log` via redirect. Read with `type mnemex.log` or `tail -f mnemex.log`.
 - **SC-Bridge:** WebSocket at `ws://127.0.0.1:49222?token=mnemex-dev-token-2026`.
 
-`launch-node.bat` handles everything: first-launch interactive setup (seed + nick), then background start with logs. Edit the `PEER_STORE` and `MSB_STORE` variables at the top of the bat file to customize store names.
+`launch-node.bat` handles everything: first-launch interactive setup (seed + nick), then background start with logs. Edit the `PEER_STORE` and `MSB_STORE` variables at the top of the bat file to set your store names — each node on the network must use a unique store name to avoid Autobase conflicts.
 
 > **SC-Bridge token:** defined in the bat file via `--sc-bridge-token`. Change it to a random string for production.
 
 **macOS / Linux** — same flags, adapt the launch script:
 ```bash
-node index.js --peer-store-name mnemex-node --msb-store-name mnemex-msb \
+# First launch (interactive — seed + nick prompt):
+pear run . -- --peer-store-name mnemex-node --msb-store-name mnemex-msb \
+  --subnet-channel mnemex-v1 \
+  --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0 \
+  --sc-bridge 1 --sc-bridge-port 49222 --sc-bridge-token <your-secret-token> \
+  --require-payment 1 --cortex-channels "cortex-crypto,cortex-dev,cortex-general,cortex-trac" \
+  --enable-skills 1 --sc-bridge-cli 1 --setup-only
+
+# Subsequent launches (background):
+pear run . -- --peer-store-name mnemex-node --msb-store-name mnemex-msb \
+  --subnet-channel mnemex-v1 \
+  --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0 \
   --sc-bridge 1 --sc-bridge-port 49222 --sc-bridge-token <your-secret-token> \
   --require-payment 1 --cortex-channels "cortex-crypto,cortex-dev,cortex-general,cortex-trac" \
   --enable-skills 1 --sc-bridge-cli 1 > mnemex.log 2>&1 &
 ```
-
-For first launch, add `--setup-only` first to handle the interactive seed setup, then relaunch without it.
 
 On first launch the peer prompts for a single wallet:
 
@@ -728,7 +737,7 @@ ws.on('message', (d) => {
 - Never expose SC-Bridge token. Bind to localhost only.
 
 ## Test Coverage
-121 tests passing (`node --test test/*.test.js`), including 5 presence tests in `test/presence.test.js` and 10 bulk sync tests in `test/bulk-sync.test.js` (sync request/response handling, open-only filtering, self-ignore, relay initiation for missing memories).
+131 tests passing (`node --test test/*.test.js`), across 8 test files covering memory flow, fees, skills, search, relay, presence, bulk sync, and setup.
 
 ## Troubleshooting
 
