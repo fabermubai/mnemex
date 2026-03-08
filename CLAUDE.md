@@ -141,6 +141,15 @@ mnemex/
 20. **Do NOT pipe stdout through `findstr` in `launch-node.bat`** — causes block buffering on Windows that swallows `[sync]` and `[presence]` log lines. Node.js switches from line buffering to block buffering when stdout is piped.
 21. **`sidechannel.broadcast()` is synchronous** — do not chain `.catch()` on it (it doesn't return a Promise).
 
+### TNK Payment Rules — MANDATORY
+Before executing ANY TNK transfer (`sendTNK`, `msb_transfer`, or any payment flow):
+1. **ALWAYS show the human a summary**: recipient address, amount, purpose.
+2. **ALWAYS ask explicit confirmation**: "Confirm payment? (y/N)".
+3. **NEVER auto-pay without human approval**, even if the flow seems obvious.
+4. **If unsure whether a payment is needed, ASK first.**
+
+This applies to: `memory_read` payments, `skill_download` payments, manual `/msb_transfer` commands, and any future payment flow.
+
 ---
 
 ## Key Trac Concepts (Quick Reference)
