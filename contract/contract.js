@@ -36,7 +36,8 @@ class MnemexContract extends Contract {
                 trust_level: { type: "enum", values: ["unverified", "consensus", "verified_crypto"], optional: true },
                 source_url: { type: "string", optional: true, max: 2048 },
                 source_hash: { type: "string", optional: true, max: 64 },
-                proof: { type: "string", optional: true, max: 1024 }
+                proof: { type: "string", optional: true, max: 1024 },
+                price: { type: "string", optional: true, max: 64 }
             }
         });
 
@@ -232,7 +233,8 @@ class MnemexContract extends Contract {
                     trust_level: val.trust_level || 'unverified',
                     source_url: val.source_url || null,
                     source_hash: val.source_hash || null,
-                    proof: val.proof || null
+                    proof: val.proof || null,
+                    price: (val.access === 'gated' && val.price) ? val.price : null
                 };
 
                 // Increment total_memories counter only for new entries
@@ -468,7 +470,8 @@ class MnemexContract extends Contract {
             trust_level: this.value.trust_level || 'unverified',
             source_url: this.value.source_url || null,
             source_hash: this.value.source_hash || null,
-            proof: this.value.proof || null
+            proof: this.value.proof || null,
+            price: (this.value.access === 'gated' && this.value.price) ? this.value.price : null
         };
 
         // Increment total_memories counter only for new entries (not updates)

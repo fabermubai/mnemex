@@ -617,6 +617,73 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
             assert.equal(response.type, 'memory_response');
             assert.equal(response.found, false);
         });
+
+        it('should use custom price for gated memory with price field', async () => {
+            broadcastCalls = [];
+
+            // Store a gated memory with custom price (0.5 TNK)
+            await indexer._handleMemoryWrite('cortex-crypto', {
+                v: 1,
+                type: 'memory_write',
+                memory_id: 'gated-custom-price',
+                cortex: 'crypto',
+                data: { key: 'PREMIUM', value: 'signal' },
+                author: 'ee'.repeat(32),
+                access: 'gated',
+                price: '500000000000000000',
+                ts: 1708617600000,
+            });
+            broadcastCalls = [];
+
+            await indexer._handleMemoryRead('cortex-crypto', {
+                v: 1,
+                type: 'memory_read',
+                memory_id: 'gated-custom-price',
+            });
+
+            assert.equal(broadcastCalls.length, 1);
+            const response = JSON.parse(broadcastCalls[0].message);
+            assert.equal(response.type, 'payment_required');
+            assert.equal(response.amount, '500000000000000000'); // 0.5 TNK, not 0.03
+            // 70/30 split on 0.5 TNK
+            assert.equal(response.creator_share, '350000000000000000'); // 70%
+            assert.equal(response.node_share, '150000000000000000');    // 30%
+        });
+
+        it('should use default price for open memory even if price field present', async () => {
+            broadcastCalls = [];
+
+            // Store an open memory with price (should be ignored)
+            await indexer._handleMemoryWrite('cortex-crypto', {
+                v: 1,
+                type: 'memory_write',
+                memory_id: 'open-with-price',
+                cortex: 'crypto',
+                data: { key: 'PUBLIC', value: 'data' },
+                author: 'ff'.repeat(32),
+                access: 'open',
+                price: '500000000000000000',
+                ts: 1708617600000,
+            });
+            broadcastCalls = [];
+
+            await indexer._handleMemoryRead('cortex-crypto', {
+                v: 1,
+                type: 'memory_read',
+                memory_id: 'open-with-price',
+            });
+
+            assert.equal(broadcastCalls.length, 1);
+            const response = JSON.parse(broadcastCalls[0].message);
+            assert.equal(response.type, 'payment_required');
+            assert.equal(response.amount, '30000000000000000'); // default 0.03 TNK
+        });
+
+        it('_computeFeeSplit with custom amount should split correctly', () => {
+            const split = indexer._computeFeeSplit('gated', '1000000000000000000'); // 1 TNK
+            assert.equal(split.creator_share, '700000000000000000'); // 70%
+            assert.equal(split.node_share, '300000000000000000');    // 30%
+        });
     });
 });
 

@@ -216,8 +216,8 @@ class MnemexProtocol extends Protocol{
         console.log('    Change your nick (3-20 chars, alphanumeric/dashes/underscores). Takes effect immediately.');
         console.log(' ');
         console.log('- Mnemex Memory Commands:');
-        console.log('- /register_memory --memory_id "<id>" --cortex "<name>" --content_hash "<sha256>" [--access "open"|"gated"] [--tags "tag1,tag2"] [--ts <ms>]');
-        console.log('    Register a memory entry on-chain (submits MSB TX, costs 0.03 $TNK).');
+        console.log('- /register_memory --memory_id "<id>" --cortex "<name>" --content_hash "<sha256>" [--access "open"|"gated"] [--tags "tag1,tag2"] [--price <TNK>] [--ts <ms>]');
+        console.log('    Register a memory entry on-chain (submits MSB TX, costs 0.03 $TNK). --price: gated only, in TNK (e.g. 0.5), default 0.03.');
         console.log('- /query_memory --memory_id "<id>"');
         console.log('    Look up a memory entry locally (no TX, no fee).');
         console.log('- /memory_read --memory_id "<id>" [--cortex "<channel>"]');
@@ -351,9 +351,10 @@ class MnemexProtocol extends Protocol{
             const access = args.access || 'open';
             const contentHash = args.content_hash || args.hash;
             const tags = args.tags || '';
+            const priceRaw = args.price;
             const tsRaw = args.ts;
             if (!memoryId || !cortex || !contentHash) {
-                console.log('Usage: /register_memory --memory_id "<id>" --cortex "<name>" --content_hash "<sha256>" [--access "open"|"gated"] [--tags "tag1,tag2"] [--ts <ms>]');
+                console.log('Usage: /register_memory --memory_id "<id>" --cortex "<name>" --content_hash "<sha256>" [--access "open"|"gated"] [--tags "tag1,tag2"] [--price <TNK>] [--ts <ms>]');
                 return;
             }
             if (access !== 'open' && access !== 'gated') {
@@ -376,6 +377,14 @@ class MnemexProtocol extends Protocol{
                 ts: ts
             };
             if (tags) txPayload.tags = String(tags);
+            if (access === 'gated' && priceRaw) {
+                const priceTNK = parseFloat(priceRaw);
+                if (isNaN(priceTNK) || priceTNK < 0) {
+                    console.log('Error: --price must be a positive number in TNK (e.g. 0.5).');
+                    return;
+                }
+                txPayload.price = Math.round(priceTNK * 1e18).toString();
+            }
             const command = this.safeJsonStringify(txPayload);
             console.log('Submitting register_memory TX...');
             console.log('Run: /tx --command \'' + command + '\'');

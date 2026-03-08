@@ -269,6 +269,7 @@ export class MemoryIndexer extends Feature {
             sig: sig || null,
             access: access || 'open',
             content_hash: contentHash,
+            price: (access === 'gated' && msg.price) ? msg.price : null,
             stored_at: Date.now()
         };
         fs.writeFileSync(filePath, JSON.stringify(stored, null, 2));
@@ -292,6 +293,7 @@ export class MemoryIndexer extends Feature {
             ts: ts
         };
         if (tags) appendPayload.tags = tags;
+        if (access === 'gated' && msg.price) appendPayload.price = String(msg.price);
         await this.append('register_memory', appendPayload);
         console.log('MemoryIndexer: appended register_memory for', memory_id);
     }
@@ -312,8 +314,8 @@ export class MemoryIndexer extends Feature {
      * - open:  60% creator, 40% node
      * - gated: 70% creator, 30% node
      */
-    _computeFeeSplit(access) {
-        const total = BigInt(this.defaultFeeAmount);
+    _computeFeeSplit(access, customAmount = null) {
+        const total = BigInt(customAmount || this.defaultFeeAmount);
         const creatorPct = access === 'gated' ? 70n : 60n;
         const nodePct = access === 'gated' ? 30n : 40n;
         return {
@@ -407,13 +409,14 @@ export class MemoryIndexer extends Feature {
 
         // Payment gate: no payment txids → return payment_required with split info
         if (this.requirePayment && !hasPayment) {
-            const split = this._computeFeeSplit(stored.access);
+            const feeAmount = (stored.access === 'gated' && stored.price) ? stored.price : this.defaultFeeAmount;
+            const split = this._computeFeeSplit(stored.access, feeAmount);
             const creatorAddress = this._getCreatorAddress(stored.author);
             const response = {
                 v: 1,
                 type: 'payment_required',
                 memory_id,
-                amount: this.defaultFeeAmount,
+                amount: feeAmount,
                 creator_share: split.creator_share,
                 node_share: split.node_share,
                 pay_to_creator: creatorAddress,
@@ -478,7 +481,8 @@ export class MemoryIndexer extends Feature {
         // Record fee in contract if payment was provided
         if (hasPayment) {
             const payer = msg.payer || 'unknown';
-            const split = this._computeFeeSplit(stored.access);
+            const feeAmount = (stored.access === 'gated' && stored.price) ? stored.price : this.defaultFeeAmount;
+            const split = this._computeFeeSplit(stored.access, feeAmount);
             const feeEntry = {
                 memory_id: String(memory_id),
                 operation: stored.access === 'gated' ? 'read_gated' : 'read_open',
@@ -486,7 +490,7 @@ export class MemoryIndexer extends Feature {
                 payment_txid: String(payment_txid_creator),
                 payment_txid_creator: String(payment_txid_creator),
                 payment_txid_node: String(payment_txid_node),
-                amount: this.defaultFeeAmount,
+                amount: feeAmount,
                 creator_share: split.creator_share,
                 node_share: split.node_share,
                 ts: Date.now()
