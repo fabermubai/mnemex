@@ -3,3 +3,5 @@ stores/
 mnemex-data/
 test-mnemex-data-*/
 *.hex
+.mnemex-run.cmd
+mnemex.log
