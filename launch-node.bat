@@ -16,4 +16,4 @@ if not exist "stores\%PEER_STORE%\db\keypair.json" (
 REM Start in a minimized window (persists after this console closes)
 start "Mnemex" /min cmd /c "pear run . -- %NODE_FLAGS% > mnemex.log 2>&1"
 echo Mnemex started in background. Logs: mnemex.log
-exit /b
+exit
