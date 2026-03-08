@@ -47,10 +47,7 @@ mnemex/
 │   ├── sidechannel/        ← P2P messaging (upstream Intercom)
 │   ├── sc-bridge/          ← WebSocket bridge (upstream Intercom)
 │   └── timer/              ← Heartbeat (upstream Intercom)
-├── test/
-│   ├── memory-flow.test.js ← Phase 1 tests (10)
-│   ├── fees.test.js        ← Phase 2 tests (15)
-│   └── skills.test.js      ← Phase 3 tests (15)
+├── test/                    ← 126 tests across 7 files
 └── index.js                ← App runner
 ```
 
@@ -63,7 +60,7 @@ mnemex/
 
 **First memory written on-chain: February 23, 2026.**
 
-**40/40 tests passing.**
+**126 tests passing across 7 test files.**
 
 ## Built On
 
@@ -79,8 +76,7 @@ mnemex/
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) v20+
-- [Pear Runtime](https://docs.pears.com) (`npm i -g pear`)
+- [Node.js](https://nodejs.org/) v22+
 - A funded $TNK wallet (each TX costs 0.03 $TNK)
 
 ### Installation
@@ -91,30 +87,24 @@ cd mnemex
 npm install
 ```
 
-### Running a Peer
+### Launch
 
-**First launch — run manually** to save your seed phrase:
-
-```bash
-pear run . \
-  --peer-store-name mnemex-admin \
-  --msb-store-name mnemex-msb \
-  --subnet-channel mnemex-v1
+Run `launch-node.bat` (Windows):
+```bat
+launch-node.bat
 ```
 
-On first launch, the wallet setup will display your 24-word mnemonic. **Back it up immediately.** It will not be shown again.
-
-To enable the WebSocket bridge (for programmatic access):
+- **First launch:** detects missing keypair → opens interactive prompt for seed phrase + nick → then starts node in background automatically.
+- **Subsequent launches:** starts directly in background. No terminal needed.
+- **Logs:** written to `mnemex.log`. Check with `type mnemex.log` or `tail -f mnemex.log`.
 
 ```bash
-pear run . \
-  --peer-store-name mnemex-admin \
-  --msb-store-name mnemex-msb \
-  --subnet-channel mnemex-v1 \
-  --sc-bridge true \
-  --sc-bridge-token <your-secret-token> \
-  --sc-bridge-cli true
+# Verify the node is running:
+tail -20 mnemex.log
+# Look for: "Sidechannel: ready"
 ```
+
+After first launch, interact with Mnemex via SC-Bridge WebSocket or ask your AI agent to do it for you.
 
 ### Connection Parameters
 

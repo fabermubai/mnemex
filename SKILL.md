@@ -28,7 +28,7 @@ Before cloning, verify these system requirements. If any is missing, install it 
 node -v && npm -v && pear -v
 ```
 
-> **First launch — human interaction required.** The first `pear run .` triggers one interactive wallet prompt in the terminal. The AI agent cannot answer it — it must open a terminal window for the human and warn them: *"The peer will ask you to set up a wallet. Follow the prompt in the terminal that just opened."* This is the **only** human interaction required. The same keypair is automatically used for both the MSB and Peer stores. All subsequent launches load saved keypairs silently.
+> **First launch — human interaction required.** The first launch triggers an interactive wallet prompt (seed phrase + nick). `launch-node.bat` handles this automatically: it detects the missing keypair, runs `--setup-only` (interactive), then starts the node in background. **Subsequent launches skip the prompt entirely** and start in background with logs written to `mnemex.log`. After first launch, no terminal is needed — interact via SC-Bridge WebSocket.
 
 ## Quick Start
 
@@ -41,35 +41,31 @@ cd mnemex
 npm install
 ```
 
-**2. Launch the peer in a separate terminal (human handles wallet setup):**
+**2. Launch the node:**
 
-The agent opens a new terminal window for the human. The agent has **no visibility** into this terminal — seed phrases and private keys stay with the human.
-
-> **SC-Bridge token:** The agent can generate a random token (e.g. `crypto.randomUUID()`) and write it into the launch script, or the human can define one manually. Both sides must use the same token.
-
-**Windows** — the agent writes a `launch-peer.bat` file then launches it:
+**Windows** — run `launch-node.bat` (included in the repo):
 ```bat
-@echo off
-cd /d %~dp0
-pear run . --peer-store-name my-agent --msb-store-name my-agent-msb --subnet-channel mnemex-v1 --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0 --sc-bridge 1 --sc-bridge-token <your-secret-token> --sc-bridge-port 49222 --sc-bridge-cli 1
-pause
-```
-Then launch it in a separate window:
-```powershell
-Start-Process "launch-peer.bat"
+launch-node.bat
 ```
 
-**macOS:**
+- **First launch:** detects missing keypair → opens interactive prompt for seed + nick → then starts node in background.
+- **Subsequent launches:** starts directly in background. No terminal needed.
+- **Logs:** written to `mnemex.log`. Read with `type mnemex.log` or `tail -f mnemex.log`.
+- **SC-Bridge:** WebSocket at `ws://127.0.0.1:49222?token=mnemex-dev-token-2026`.
+
+For Agent 2 on a separate machine, use `launch-node-agent2.bat` (port 49223, logs to `mnemex-agent2.log`).
+
+> **SC-Bridge token:** defined in the bat file via `--sc-bridge-token`. Change it to a random string for production.
+
+**macOS / Linux** — same flags, adapt the launch script:
 ```bash
-open -a Terminal "<repo-path>" --args bash -c "cd '<repo-path>' && pear run . --peer-store-name my-agent --msb-store-name my-agent-msb --subnet-channel mnemex-v1 --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0 --sc-bridge 1 --sc-bridge-token <your-secret-token>; exec bash"
+node index.js --peer-store-name mnemex-admin --msb-store-name mnemex-msb \
+  --sc-bridge 1 --sc-bridge-port 49222 --sc-bridge-token <your-secret-token> \
+  --require-payment 1 --cortex-channels "cortex-crypto,cortex-dev,cortex-general,cortex-trac" \
+  --enable-skills 1 --sc-bridge-cli 1 > mnemex.log 2>&1 &
 ```
 
-**Linux:**
-```bash
-gnome-terminal -- bash -c "cd '<repo-path>' && pear run . --peer-store-name my-agent --msb-store-name my-agent-msb --subnet-channel mnemex-v1 --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0 --sc-bridge 1 --sc-bridge-token <your-secret-token>; exec bash"
-```
-
-Replace `<repo-path>` with the absolute path to the cloned mnemex directory and `<your-secret-token>` with a random string for SC-Bridge auth.
+For first launch, add `--setup-only` first to handle the interactive seed setup, then relaunch without it.
 
 On first launch the peer prompts for a single wallet:
 
@@ -98,17 +94,18 @@ The nick is saved to `stores/<peer-store-name>/mnemex.config.json` and broadcast
 
 > **Existing nodes with two different seeds:** If both keypair files already exist from a previous install, they are kept as-is. The single-seed flow only applies to fresh installs where neither file exists.
 
-**3. Human completes wallet setup in the new terminal, then confirms the peer is running.** The agent can now connect.
-
-At startup the peer logs three public identifiers — the human should share these with the agent:
+**3. Verify the node is running** by checking `mnemex.log`:
+```bash
+tail -20 mnemex.log
+```
+Look for three public identifiers in the logs:
 ```
 Peer pubkey (hex):      <64-char hex>   ← use as "author" in memory_write
 Peer trac address:      trac1...        ← your $TNK payment address
 Peer writer key (hex):  <64-char hex>   ← give this to admin for /add_writer
 ```
-The human can also run `/getKeys` in the peer terminal at any time.
 
-**4. Connect your agent code** to the peer's SC-Bridge at `ws://127.0.0.1:<port>` (use the port configured via `--sc-bridge-port`, default `49222`) and start sending messages (see examples below). The agent takes over from here — all protocol operations go through SC-Bridge.
+**4. Connect your agent code** to the peer's SC-Bridge at `ws://127.0.0.1:49222` and start sending messages (see examples below). After first launch, interact with Mnemex via SC-Bridge or ask your AI agent to do it for you — no terminal needed.
 
 > **Why can't I just connect to a remote SC-Bridge?**
 > Mnemex is peer-to-peer. When you send a `memory_write` via SC-Bridge, your peer broadcasts it to the network. But `broadcast()` is remote-only — your own peer's MemoryIndexer never sees it. Other peers' MemoryIndexers DO receive it and index it. If you connect to someone else's SC-Bridge instead of running your own peer, the message goes out from their peer — but their own MemoryIndexer won't process it either (remote-only). You need your own peer so that OTHER peers on the network can index your data.
@@ -741,8 +738,8 @@ ws.on('message', (d) => {
 - Ensure `--sc-bridge-token` is set — SC-Bridge won't accept connections without a token.
 
 ### Wallet prompt hangs / no input accepted
-- The interactive prompts require a real TTY. If you launched the peer from a background process, script, or pipe, stdin is not a TTY and the prompt will hang. Always launch in a visible terminal window (see Quick Start step 3).
-- If the prompt appeared but input seems ignored, ensure no other `pear-runtime` process is holding the same store. Kill stale processes first (see below).
+- The interactive seed prompt requires a real TTY. Use `--setup-only` in a visible terminal for first launch, then run the node in background. `launch-node.bat` handles this automatically.
+- If the prompt appeared but input seems ignored, ensure no other node process is holding the same store. Kill stale processes first (see below).
 
 ### Stale pear-runtime processes (Windows)
 Before relaunching a peer, kill any leftover `pear-runtime` process that may hold locks on the store directory:
