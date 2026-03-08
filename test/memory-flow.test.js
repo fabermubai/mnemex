@@ -260,4 +260,38 @@ describe('Memory Flow — Phase 1 MVP', () => {
         assert.equal(response.memory_id, 'test-memory-001');
         assert.equal(response.reason, 'Not the author');
     });
+
+    // ==================== Hash Verification ====================
+
+    it('hash verification passes for untampered memory', async () => {
+        const replies = [];
+        await indexer._handleMemoryRead('cortex-crypto', {
+            v: 1, type: 'memory_read', memory_id: 'test-memory-001',
+        }, (data) => replies.push(JSON.parse(data)));
+
+        assert.equal(replies.length, 1);
+        const res = replies[0];
+        assert.equal(res.found, true);
+        assert.ok(res.content_hash, 'response should include content_hash');
+
+        const recomputedHash = crypto.createHash('sha256')
+            .update(JSON.stringify(res.data))
+            .digest('hex');
+        assert.equal(recomputedHash, res.content_hash, 'hash should match untampered data');
+    });
+
+    it('hash verification fails for tampered data', async () => {
+        const replies = [];
+        await indexer._handleMemoryRead('cortex-crypto', {
+            v: 1, type: 'memory_read', memory_id: 'test-memory-001',
+        }, (data) => replies.push(JSON.parse(data)));
+
+        const res = replies[0];
+        // Simulate tampering: modify data after receiving response
+        const tamperedData = { ...res.data, value: 999999 };
+        const recomputedHash = crypto.createHash('sha256')
+            .update(JSON.stringify(tamperedData))
+            .digest('hex');
+        assert.notEqual(recomputedHash, res.content_hash, 'hash should NOT match tampered data');
+    });
 });

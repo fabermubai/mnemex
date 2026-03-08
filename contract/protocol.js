@@ -3,6 +3,7 @@ import { bufferToBigInt, bigIntToDecimalString, decimalStringToBigInt } from "tr
 import { sendTNK } from "../src/fees/tnk-transfer.js";
 import b4a from "b4a";
 import PeerWallet from "trac-wallet";
+import crypto from "crypto";
 import fs from "fs";
 import { saveConfig } from "../lib/config.js";
 
@@ -464,6 +465,20 @@ class MnemexProtocol extends Protocol{
                 console.log('Cortex:', response.cortex || cortex);
                 console.log('Author:', response.author || 'unknown');
                 console.log('Data:', JSON.stringify(response.data, null, 2));
+
+                // Verify content integrity
+                if (response.content_hash && response.data !== undefined) {
+                    const recomputedHash = crypto.createHash('sha256')
+                        .update(JSON.stringify(response.data))
+                        .digest('hex');
+                    if (recomputedHash === response.content_hash) {
+                        console.log('Hash: verified — content integrity confirmed');
+                    } else {
+                        console.log('Hash: MISMATCH — content may have been tampered!');
+                        console.log('   Expected:', response.content_hash);
+                        console.log('   Got     :', recomputedHash);
+                    }
+                }
                 return;
             }
 
