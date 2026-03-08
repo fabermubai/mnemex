@@ -161,7 +161,11 @@ Before running `launch-node.bat` for the first time, ALWAYS follow this exact sc
 
 **Step 2** — Wait for explicit confirmation from the user before doing anything.
 
-**Step 3** — Run `launch-node.bat` (first launch = interactive setup).
+**Step 3** — Launch the bat using this exact command (from bash in Claude Code):
+```bash
+powershell.exe -Command "Start-Process 'cmd.exe' -ArgumentList '/c launch-node.bat' -WorkingDirectory '<repo_path>'"
+```
+Do NOT use `cmd.exe /c launch-node.bat` directly from bash — it doesn't spawn the setup terminal correctly on Windows.
 
 **Step 4** — After the user says the terminal is closed, confirm the node is running: send `/mnemex_stats` via SC-Bridge. If it responds, the node is up.
 
