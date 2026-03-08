@@ -117,7 +117,10 @@ mnemex/
 10. **Memory Nodes = Trac validators running a Mnemex peer as indexer** — they store data locally and serve it via sidechannels.
 11. **Neurominers = any agent (peer) that publishes data** — they're writers on the subnet.
 12. **All fees are in $TNK** — no separate Mnemex token exists or will ever exist.
-13. **The entry sidechannel is `0000mnemex`** — this is the discovery/rendezvous point.
+13. **The entry sidechannel is `0000mnemex`** — used for 3 things: entry/discovery, `peer_announce` (presence heartbeat), and `memory_sync_request` (bulk sync).
+14. **Bulk sync:** new nodes auto-fetch open memories at startup via `memory_sync_request`/`memory_sync_response` on sidechannel. The `is_sync: true` flag on relay requests bypasses the payment gate for open memories only. Gated memories are never synced.
+15. **`mnemex-data/` is the source of truth for payloads.** Bulk sync makes it distributed — if a node goes down, peers have copies.
+16. **Nick: use `/my_nick`, not `/set_nick`.** `/set_nick` is intercepted by trac-peer (upstream). `/my_nick` is the Mnemex command. Nick stored in `stores/<peer-store-name>/mnemex.config.json`.
 
 ### Style Rules
 14. Use ES modules (`import`/`export`), not CommonJS.
@@ -132,6 +135,10 @@ mnemex/
     - Wait for an explicit "yes" before executing
     - AFTER execution: display the amount spent and the remaining balance
     - Applies to: `register_memory`, `record_fee`, `register_stake`, `record_skill_download`, `register_skill`, `register_cortex`, and any TNK transfer
+
+### Windows Warnings
+20. **Do NOT pipe stdout through `findstr` in `launch-node.bat`** — causes block buffering on Windows that swallows `[sync]` and `[presence]` log lines. Node.js switches from line buffering to block buffering when stdout is piped.
+21. **`sidechannel.broadcast()` is synchronous** — do not chain `.catch()` on it (it doesn't return a Promise).
 
 ---
 
@@ -160,7 +167,7 @@ Read `docs/TRAC-KNOWLEDGE-BASE.md` for full details. Critical concepts:
 #### Task 1: MnemexContract (`contract/contract.js`)
 Transform the example Intercom contract into MnemexContract:
 - `register_memory` — record a memory entry in contract state
-  - Schema: `{ op, memory_id (string), cortex (string), author (pubkey hex), access ("open"|"gated"), content_hash (string, sha256 of data), ts (number) }`
+  - Schema: `{ op, memory_id (string), cortex (string), author (pubkey hex), access ("open"|"gated"), content_hash (string, sha256 of data), ts (number), tags (string, optional), trust_level (enum: "unverified"|"consensus"|"verified_crypto", optional), source_url (string, optional, max 2048), source_hash (string, optional, max 64), proof (string, optional, max 1024) }`
   - Storage: `put('mem/' + memory_id, { author, cortex, access, content_hash, ts })`
   - Storage: `put('mem_by_author/' + author + '/' + memory_id, true)` (index)
   - Storage: `put('mem_by_cortex/' + cortex + '/' + memory_id, true)` (index)
@@ -592,6 +599,8 @@ Create tests:
 - `register_cortex` rejects non-admin
 
 After all tests pass → git commit "Phase 3 complete — Skills registry and multi-cortex" and push.
+
+**Current test count: 121 tests** across 6 files: `memory-flow.test.js`, `fees.test.js`, `skills.test.js`, `search.test.js`, `relay.test.js`, `bulk-sync.test.js`.
 
 ---
 
