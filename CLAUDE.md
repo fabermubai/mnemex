@@ -121,6 +121,7 @@ mnemex/
 14. **Bulk sync:** new nodes auto-fetch open memories at startup via `memory_sync_request`/`memory_sync_response` on sidechannel. The `is_sync: true` flag on relay requests bypasses the payment gate for open memories only. Gated memories are never synced.
 15. **`mnemex-data/` is the source of truth for payloads.** Bulk sync makes it distributed — if a node goes down, peers have copies.
 16. **Nick: use `/my_nick`, not `/set_nick`.** `/set_nick` is intercepted by trac-peer (upstream). `/my_nick` is the Mnemex command. Nick stored in `stores/<peer-store-name>/mnemex.config.json`.
+17. **Gated Memory custom price:** creator sets `--price <TNK>` on `register_memory`; payment gate uses the stored price instead of default 0.03 $TNK. Split 70/30 (creator/node) applied on the custom amount. Validated E2E inter-machines with 0.15 $TNK (commits `f5022ca` + `d7e7af9`).
 
 ### Style Rules
 14. Use ES modules (`import`/`export`), not CommonJS.

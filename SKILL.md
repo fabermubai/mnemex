@@ -614,7 +614,7 @@ Edit this file manually to change your nick, or use `/my_nick <name>` (restart n
 ### Transaction commands (cost 0.03 $TNK each)
 | Command | Description |
 |---------|-------------|
-| `/register_memory --memory_id ... --cortex ... --content_hash ... --access ...` | Register memory on-chain |
+| `/register_memory --memory_id ... --cortex ... --content_hash ... --access ... [--price <TNK>]` | Register memory on-chain (use `--price` for gated custom price) |
 | `/record_fee --memory_id ... --operation ... --payer ... --payment_txid ... --amount ...` | Record a fee payment |
 | `/register_stake --memory_id ... --stake_txid ... --stake_amount ...` | Stake $TNK on a memory |
 | `/register_skill --skill_id ... --name ... --cortex ... --price ... --version ...` | Register skill on-chain |
@@ -655,6 +655,16 @@ async def write_memory():
         }))
 
 asyncio.run(write_memory())
+```
+
+### Write a gated memory with custom price (CLI)
+```bash
+# Register a gated memory at 0.15 TNK (instead of default 0.03 TNK)
+/register_memory --memory_id premium-btc-analysis-001 --cortex cortex-crypto \
+  --content_hash abc123... --access gated --price 0.15
+
+# The payment gate will require 0.15 TNK from non-author readers
+# Split: 70% creator (0.105 TNK) / 30% node (0.045 TNK)
 ```
 
 ### Read a memory (Node.js + ws)
