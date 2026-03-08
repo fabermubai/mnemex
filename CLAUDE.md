@@ -151,10 +151,24 @@ Before executing ANY TNK transfer (`sendTNK`, `msb_transfer`, or any payment flo
 This applies to: `memory_read` payments, `skill_download` payments, manual `/msb_transfer` commands, and any future payment flow.
 
 ### First Launch — User Guidance
-Before running `launch-node.bat` for the first time:
-1. **Warn the user:** "A terminal will open asking for your seed phrase, then your nickname. Fill both in, then close the terminal and let me know."
-2. **Wait for the user to confirm** before proceeding.
-3. **Never launch setup without this warning first.**
+Before running `launch-node.bat` for the first time, ALWAYS follow this exact script:
+
+**Step 1** — Warn the user with this exact message:
+> "I'm going to set up your Mnemex node. A terminal window will open and ask you two things:
+> 1. Your seed phrase (or press Enter to generate a new one)
+> 2. A nickname for your node (choose any name)
+> Fill both in, then close the terminal window and tell me when it's done."
+
+**Step 2** — Wait for explicit confirmation from the user before doing anything.
+
+**Step 3** — Run `launch-node.bat` (first launch = interactive setup).
+
+**Step 4** — After the user says the terminal is closed, confirm the node is running: send `/mnemex_stats` via SC-Bridge. If it responds, the node is up.
+
+**Step 5** — Tell the user: "Your node is running. You're connected to the Mnemex network."
+
+**NEVER** skip the warning. **NEVER** launch without user confirmation.
+**NEVER** assume the setup is done — always verify with `/mnemex_stats`.
 
 ### Agent Interaction Flow
 - **First launch only:** `launch-node.bat` detects missing keypair → runs `pear run . -- --setup-only` (interactive terminal for seed + nick) → then starts node as a hidden background process.
@@ -625,7 +639,7 @@ Create tests:
 
 After all tests pass → git commit "Phase 3 complete — Skills registry and multi-cortex" and push.
 
-**Current test count: 121 tests** across 6 files: `memory-flow.test.js`, `fees.test.js`, `skills.test.js`, `search.test.js`, `relay.test.js`, `bulk-sync.test.js`.
+**Current test count: 131 tests** across 8 files: `memory-flow.test.js`, `fees.test.js`, `skills.test.js`, `search.test.js`, `relay.test.js`, `bulk-sync.test.js`, `presence.test.js`, `setup-only.test.js`.
 
 ---
 
