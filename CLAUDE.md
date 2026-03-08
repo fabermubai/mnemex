@@ -150,6 +150,14 @@ Before executing ANY TNK transfer (`sendTNK`, `msb_transfer`, or any payment flo
 
 This applies to: `memory_read` payments, `skill_download` payments, manual `/msb_transfer` commands, and any future payment flow.
 
+### Agent Interaction Flow
+- **First launch only:** `launch-node.bat` detects missing keypair → runs `--setup-only` (interactive terminal for seed + nick) → then starts node in background.
+- **Subsequent launches:** node starts in background immediately via `start /B`, logs written to `mnemex.log`.
+- **Reading logs:** `tail -f mnemex.log` or `type mnemex.log` — all `console.log` output goes to this file.
+- **Interacting via SC-Bridge:** connect to `ws://127.0.0.1:49222?token=<sc-bridge-token>`. Send JSON messages (`memory_write`, `memory_read`, `chat_send`, `cli`, etc.). Auth required: `{ type: "auth", token: "..." }`.
+- **CLI via SC-Bridge:** send `{ type: "cli", command: "/mnemex_stats" }` — requires `--sc-bridge-cli 1`.
+- **Terminal is NOT needed** after first launch. All operations go through SC-Bridge WebSocket.
+
 ---
 
 ## Key Trac Concepts (Quick Reference)

@@ -85,6 +85,11 @@ const enableSkillsRaw =
   '';
 const enableSkills = parseBool(enableSkillsRaw, true);
 
+const setupOnlyRaw =
+  (flags['setup-only'] && String(flags['setup-only'])) ||
+  '';
+const setupOnly = parseBool(setupOnlyRaw, false);
+
 const parseKeyValueList = (raw) => {
   if (!raw) return [];
   return String(raw)
@@ -468,6 +473,14 @@ if (!mnemexConfig.nick && walletRl) {
   console.log('Nick saved:', nick);
 }
 if (walletRl) walletRl.close();
+
+// --setup-only: exit after keypair + nick setup, don't start the node
+if (setupOnly) {
+  console.log('');
+  console.log('Setup complete. Keypairs and nick configured.');
+  console.log('Run launch-node.bat to start Mnemex in background.');
+  process.exit(0);
+}
 
 console.log('=============== STARTING MSB ===============');
 const msb = new MainSettlementBus(msbConfig);
