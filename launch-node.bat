@@ -1,10 +1,12 @@
 @echo off
-cd /d F:\Mnemex
+cd /d "%~dp0"
 
-set NODE_FLAGS=--peer-store-name mnemex-admin --msb-store-name mnemex-msb --sc-bridge 1 --sc-bridge-port 49222 --sc-bridge-token mnemex-dev-token-2026 --require-payment 1 --cortex-channels "cortex-crypto,cortex-dev,cortex-general,cortex-trac" --enable-skills 1 --sc-bridge-cli 1
+set PEER_STORE=mnemex-node
+set MSB_STORE=mnemex-msb
+set NODE_FLAGS=--peer-store-name %PEER_STORE% --msb-store-name %MSB_STORE% --sc-bridge 1 --sc-bridge-port 49222 --sc-bridge-token mnemex-dev-token-2026 --require-payment 1 --cortex-channels "cortex-crypto,cortex-dev,cortex-general,cortex-trac" --enable-skills 1 --sc-bridge-cli 1
 
 REM First launch detection: keypair missing → interactive setup
-if not exist "stores\mnemex-admin\db\keypair.json" (
+if not exist "stores\%PEER_STORE%\db\keypair.json" (
   echo First launch — interactive setup required.
   node index.js %NODE_FLAGS% --setup-only
   echo.

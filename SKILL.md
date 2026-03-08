@@ -53,13 +53,13 @@ launch-node.bat
 - **Logs:** written to `mnemex.log`. Read with `type mnemex.log` or `tail -f mnemex.log`.
 - **SC-Bridge:** WebSocket at `ws://127.0.0.1:49222?token=mnemex-dev-token-2026`.
 
-For Agent 2 on a separate machine, use `launch-node-agent2.bat` (port 49223, logs to `mnemex-agent2.log`).
+`launch-node.bat` handles everything: first-launch interactive setup (seed + nick), then background start with logs. Edit the `PEER_STORE` and `MSB_STORE` variables at the top of the bat file to customize store names.
 
 > **SC-Bridge token:** defined in the bat file via `--sc-bridge-token`. Change it to a random string for production.
 
 **macOS / Linux** — same flags, adapt the launch script:
 ```bash
-node index.js --peer-store-name mnemex-admin --msb-store-name mnemex-msb \
+node index.js --peer-store-name mnemex-node --msb-store-name mnemex-msb \
   --sc-bridge 1 --sc-bridge-port 49222 --sc-bridge-token <your-secret-token> \
   --require-payment 1 --cortex-channels "cortex-crypto,cortex-dev,cortex-general,cortex-trac" \
   --enable-skills 1 --sc-bridge-cli 1 > mnemex.log 2>&1 &

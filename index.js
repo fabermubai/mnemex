@@ -450,34 +450,69 @@ if (firstLaunch) {
   await ensureKeypairFile(msbConfig.keyPairPath, walletRl);
   await ensureKeypairFile(peerConfig.keyPairPath, walletRl);
 }
-// Nick prompt on first launch (before closing readline)
+// Nick prompt (before closing readline)
 const peerStorePath = path.join(peerStoresDirectory, peerStoreNameRaw);
 let mnemexConfig = loadConfig(peerStorePath);
-if (!mnemexConfig.nick && walletRl) {
-  const nickPromise = new Promise((resolve) => {
-    const onLine = (input) => {
-      const nick = (input || '').trim();
-      if (/^[a-zA-Z0-9_-]{3,20}$/.test(nick)) {
-        walletRl.off('line', onLine);
-        resolve(nick);
-      } else {
-        console.log('Invalid nick. Use 3-20 alphanumeric characters, dashes, or underscores.');
-        console.log('Choose a nick for your Mnemex agent (e.g. FaberNode):');
-      }
-    };
-    console.log('Choose a nick for your Mnemex agent (e.g. FaberNode):');
-    walletRl.on('line', onLine);
-  });
-  const nick = await nickPromise;
-  saveConfig(peerStorePath, { nick, created_at: Date.now() });
-  console.log('Nick saved:', nick);
+// Always prompt for nick during --setup-only (even if config has one), otherwise only on first launch
+const shouldPromptNick = setupOnly || (!mnemexConfig.nick && walletRl);
+if (shouldPromptNick) {
+  // Ensure readline is available for nick prompt
+  if (!walletRl) {
+    try {
+      walletRl = readline.createInterface({
+        input: new tty.ReadStream(0),
+        output: new tty.WriteStream(1),
+      });
+    } catch (_) {
+      // No TTY available (e.g. background mode, test runner) — skip nick prompt
+    }
+  }
+  if (walletRl) {
+    const currentNick = mnemexConfig.nick;
+    const nickLabel = currentNick
+      ? `Choose a nick for your Mnemex agent (current: ${currentNick}):`
+      : 'Choose a nick for your Mnemex agent (e.g. FaberNode):';
+    const nickPromise = new Promise((resolve) => {
+      const onLine = (input) => {
+        const nick = (input || '').trim();
+        // Allow empty input to keep current nick (only if one exists)
+        if (nick === '' && currentNick) {
+          walletRl.off('line', onLine);
+          resolve(currentNick);
+        } else if (/^[a-zA-Z0-9_-]{3,20}$/.test(nick)) {
+          walletRl.off('line', onLine);
+          resolve(nick);
+        } else {
+          console.log('Invalid nick. Use 3-20 alphanumeric characters, dashes, or underscores.');
+          console.log(nickLabel);
+        }
+      };
+      console.log(nickLabel);
+      walletRl.on('line', onLine);
+    });
+    const nick = await nickPromise;
+    saveConfig(peerStorePath, { nick, created_at: mnemexConfig.created_at || Date.now() });
+    mnemexConfig = loadConfig(peerStorePath);
+    console.log('Nick saved:', nick);
+  }
 }
 if (walletRl) walletRl.close();
 
 // --setup-only: exit after keypair + nick setup, don't start the node
 if (setupOnly) {
-  console.log('');
-  console.log('Setup complete. Keypairs and nick configured.');
+  // Load keypair to display address confirmation
+  const wallet = new PeerWallet();
+  await wallet.ready;
+  try {
+    wallet.importFromFile(peerConfig.keyPairPath);
+    console.log('');
+    console.log('Setup complete.');
+    console.log('  Nick:    ', mnemexConfig.nick || '(none)');
+    console.log('  Address: ', wallet.address || wallet.publicKey);
+  } catch (_) {
+    console.log('');
+    console.log('Setup complete. Keypairs and nick configured.');
+  }
   console.log('Run launch-node.bat to start Mnemex in background.');
   process.exit(0);
 }
