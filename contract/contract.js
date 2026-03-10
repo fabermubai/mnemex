@@ -77,6 +77,16 @@ class MnemexContract extends Contract {
             }
         });
 
+        // get_reputation — read-only reputation score for an address
+        this.addSchema('get_reputation', {
+            value: {
+                $$strict: true,
+                $$type: "object",
+                op: { type: "string", min: 1, max: 128 },
+                address: { type: "string", min: 1, max: 256 }
+            }
+        });
+
         // get_stats — read-only protocol stats (no params)
         this.addFunction('get_stats');
 
@@ -570,6 +580,10 @@ class MnemexContract extends Contract {
             await this.put('balance/node/' + servedBy, (nodeIndBal + nodeShare).toString());
         }
 
+        // Reputation: increment author read count
+        const existingReads = await this.get('rep/' + author + '/reads');
+        const reads = (existingReads !== null ? existingReads : 0) + 1;
+
         // All put() calls at the end
         await this.put('fee/' + paymentTxid, {
             memory_id: memoryId,
@@ -585,6 +599,7 @@ class MnemexContract extends Contract {
         await this.put('balance_nodes', newNodeBal);
         await this.put('stats/total_fees', newTotalFees);
         await this.put('stats/fee_count', newFeeCount);
+        await this.put('rep/' + author + '/reads', reads);
     }
 
     /**
@@ -612,6 +627,20 @@ class MnemexContract extends Contract {
             total_skills: totalSkills !== null ? totalSkills : 0,
             total_downloads: totalDownloads !== null ? totalDownloads : 0
         });
+    }
+
+    /**
+     * get_reputation — read-only reputation score for an address.
+     * Score = reads - (slashes * 10)
+     */
+    async get_reputation() {
+        const address = this.value.address;
+        const reads = await this.get('rep/' + address + '/reads');
+        const slashes = await this.get('rep/' + address + '/slashes');
+        const r = reads !== null ? reads : 0;
+        const s = slashes !== null ? slashes : 0;
+        const score = r - (s * 10);
+        console.log('reputation:', { address, reads: r, slashes: s, score });
     }
 
     /**
@@ -701,6 +730,10 @@ class MnemexContract extends Contract {
 
         const newTotal = (totalStaked - stakeAmount).toString();
 
+        // Reputation: increment author slash count
+        const existingSlashes = await this.get('rep/' + stake.author + '/slashes');
+        const slashes = (existingSlashes !== null ? existingSlashes : 0) + 1;
+
         // All put() calls at the end
         await this.put('stake/' + memoryId, {
             author: stake.author,
@@ -711,6 +744,7 @@ class MnemexContract extends Contract {
             slash_reason: reason
         });
         await this.put('staked_by/' + stake.author, newTotal);
+        await this.put('rep/' + stake.author + '/slashes', slashes);
     }
 
     /**

@@ -241,6 +241,8 @@ class MnemexProtocol extends Protocol{
         console.log('    Show full Mnemex network stats: memories, skills, downloads, fees (local read).');
         console.log('- /list_fees [--limit <n>]');
         console.log('    Show recent fee records from state (default last 10).');
+        console.log('- /reputation --address "<pubkey>"');
+        console.log('    Show reputation score for an address (local read).');
         console.log(' ');
         console.log('- Mnemex Staking Commands:');
         console.log('- /register_stake --memory_id "<id>" --stake_txid "<hash>" --stake_amount "<bigint>"');
@@ -668,6 +670,25 @@ class MnemexProtocol extends Protocol{
             }
             const balance = await this.getSigned('balance/' + address);
             console.log('balance/' + address + ':', balance !== null ? balance : '0');
+            return;
+        }
+
+        if (this.input.startsWith("/reputation")) {
+            const args = this.parseArgs(input);
+            const address = args.address || args.addr;
+            if (!address) {
+                console.log('Usage: /reputation --address "<pubkey>"');
+                return;
+            }
+            const reads = await this.getSigned('rep/' + address + '/reads');
+            const slashes = await this.getSigned('rep/' + address + '/slashes');
+            const r = reads !== null ? reads : 0;
+            const s = slashes !== null ? slashes : 0;
+            const score = r - (s * 10);
+            console.log('Address:', address);
+            console.log('Reads:  ', r);
+            console.log('Slashes:', s);
+            console.log('Score:  ', score);
             return;
         }
 
