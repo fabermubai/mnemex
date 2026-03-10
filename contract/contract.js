@@ -314,6 +314,10 @@ class MnemexContract extends Contract {
                     }
                 }
 
+                // Reputation: increment author read count
+                const existingReads = await _this.get('rep/' + author + '/reads');
+                const reads = (existingReads !== null ? existingReads : 0) + 1;
+
                 await _this.put('fee/' + val.payment_txid, {
                     memory_id: val.memory_id,
                     operation: val.operation,
@@ -328,6 +332,7 @@ class MnemexContract extends Contract {
                 await _this.put('balance_nodes', newNodeBal);
                 await _this.put('stats/total_fees', newTotalFees);
                 await _this.put('stats/fee_count', newFeeCount);
+                await _this.put('rep/' + author + '/reads', reads);
             }
 
             if (_this.op.key === 'register_skill') {

@@ -113,6 +113,63 @@ describe('Phase 6 — Reputation Scores', () => {
         assert.equal(ctx.state['rep/author-aaa/slashes'], 2);
     });
 
+    it('rep/<author>/reads increments via Feature handler (production path)', async () => {
+        // The Feature handler is the real production path (this.append → memory_indexer_feature).
+        // The handler is a closure over _this from the constructor. We instantiate MnemexContract
+        // with all methods stubbed, then override _this's state access to use our mock.
+        let featureHandler = null;
+        const origAddFeature = MnemexContract.prototype.addFeature;
+        MnemexContract.prototype.addFeature = function(name, fn) {
+            if (name === 'memory_indexer_feature') featureHandler = fn.bind(this);
+            // call original so check schemas are compiled
+            return origAddFeature.call(this, name, fn);
+        };
+        const contract = new MnemexContract();
+        MnemexContract.prototype.addFeature = origAddFeature;
+
+        // Inject mock state into the contract instance
+        const state = {};
+        seedMemory(state, 'feat-mem-001', 'feat-author');
+        contract.get = async (key) => state[key] !== undefined ? state[key] : null;
+        contract.put = async (key, value) => { state[key] = value; };
+        contract.protocol = {
+            safeBigInt: (str) => {
+                if (str === null || str === undefined) return null;
+                try { return BigInt(str); } catch { return null; }
+            },
+        };
+
+        // First record_fee via Feature path
+        contract.op = {
+            key: 'record_fee',
+            value: {
+                memory_id: 'feat-mem-001',
+                operation: 'read_open',
+                payer: 'payer-feat',
+                payment_txid: 'feat-tx-001',
+                amount: '100000000000000000',
+                ts: Date.now(),
+            }
+        };
+        await featureHandler();
+        assert.equal(state['rep/feat-author/reads'], 1, 'Feature path should increment reads');
+
+        // Second fee
+        contract.op = {
+            key: 'record_fee',
+            value: {
+                memory_id: 'feat-mem-001',
+                operation: 'read_open',
+                payer: 'payer-feat-2',
+                payment_txid: 'feat-tx-002',
+                amount: '100000000000000000',
+                ts: Date.now(),
+            }
+        };
+        await featureHandler();
+        assert.equal(state['rep/feat-author/reads'], 2, 'Feature path should accumulate reads');
+    });
+
     it('get_reputation returns correct score (reads - slashes*10)', async () => {
         const ctx = createMockContract();
         ctx.state['rep/author-bbb/reads'] = 25;
