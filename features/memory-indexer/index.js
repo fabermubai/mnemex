@@ -29,6 +29,10 @@ export class MemoryIndexer extends Feature {
         this.msb = options.msb || null; // raw MSB instance for tx verification
         this.defaultFeeAmount = '30000000000000000'; // 0.03 TNK in smallest unit
 
+        // MSB payment verification retry settings
+        this.paymentRetryMs = options.paymentRetryMs ?? 3000;
+        this.paymentMaxAttempts = options.paymentMaxAttempts ?? 10;
+
         // P2P relay: when a memory isn't found locally, broadcast to the network
         this.pendingRelays = new Map(); // request_id → { replyFn, channel, timer }
         this.relayTimeoutMs = options.relayTimeoutMs || 10_000; // 10 seconds
@@ -448,34 +452,44 @@ export class MemoryIndexer extends Feature {
         }
 
         // Verify both payments on MSB if msb is available
+        // Retry every 3s for up to 30s — MSB propagation can take several seconds
         if (this.requirePayment && hasPayment && this.msb) {
-            const confirmedCreator = await this.msb.state.getTransactionConfirmedLength(payment_txid_creator);
-            if (confirmedCreator === null) {
-                const response = {
-                    v: 1,
-                    type: 'payment_not_confirmed',
-                    memory_id,
-                    payment_txid: payment_txid_creator,
-                    which: 'creator',
-                    ts: Date.now()
-                };
-                this._respond(channel, response, replyFn);
-                console.log('MemoryIndexer: payment_not_confirmed (creator) for', memory_id, '— txid:', payment_txid_creator);
-                return;
+            const maxAttempts = this.paymentMaxAttempts;
+            const retryDelayMs = this.paymentRetryMs;
+            let creatorConfirmed = false;
+            let nodeConfirmed = false;
+
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                if (!creatorConfirmed) {
+                    const result = await this.msb.state.getTransactionConfirmedLength(payment_txid_creator);
+                    if (result !== null) creatorConfirmed = true;
+                }
+                if (!nodeConfirmed) {
+                    const result = await this.msb.state.getTransactionConfirmedLength(payment_txid_node);
+                    if (result !== null) nodeConfirmed = true;
+                }
+                if (creatorConfirmed && nodeConfirmed) break;
+                if (attempt < maxAttempts) {
+                    console.log('MemoryIndexer: payment verification attempt', attempt + '/' + maxAttempts,
+                        'for', memory_id, '— creator:', creatorConfirmed, 'node:', nodeConfirmed, '— retrying in 3s');
+                    await new Promise(r => setTimeout(r, retryDelayMs));
+                }
             }
 
-            const confirmedNode = await this.msb.state.getTransactionConfirmedLength(payment_txid_node);
-            if (confirmedNode === null) {
+            if (!creatorConfirmed || !nodeConfirmed) {
+                const which = !creatorConfirmed ? 'creator' : 'node';
+                const txid = !creatorConfirmed ? payment_txid_creator : payment_txid_node;
                 const response = {
                     v: 1,
                     type: 'payment_not_confirmed',
                     memory_id,
-                    payment_txid: payment_txid_node,
-                    which: 'node',
+                    payment_txid: txid,
+                    which,
                     ts: Date.now()
                 };
                 this._respond(channel, response, replyFn);
-                console.log('MemoryIndexer: payment_not_confirmed (node) for', memory_id, '— txid:', payment_txid_node);
+                console.log('MemoryIndexer: payment_not_confirmed (' + which + ') for', memory_id,
+                    '— txid:', txid, '— exhausted', maxAttempts, 'attempts');
                 return;
             }
         }

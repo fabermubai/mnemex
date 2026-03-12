@@ -939,6 +939,8 @@ describe('MemoryIndexer — MSB dual-txid verification', () => {
             requirePayment: true,
             nodeAddress: 'trac1verifynode',
             msb: mockMsb,
+            paymentRetryMs: 0,
+            paymentMaxAttempts: 1,
         });
         indexer.key = 'memory_indexer';
         indexer.append = async (key, value) => { appendCalls.push({ key, value }); };
@@ -990,6 +992,8 @@ describe('MemoryIndexer — MSB dual-txid verification', () => {
             requirePayment: true,
             nodeAddress: 'trac1verifynode',
             msb: mockMsb,
+            paymentRetryMs: 0,
+            paymentMaxAttempts: 1,
         });
         indexer.key = 'memory_indexer';
         indexer.append = async (key, value) => { appendCalls.push({ key, value }); };
@@ -1030,6 +1034,8 @@ describe('MemoryIndexer — MSB dual-txid verification', () => {
             requirePayment: true,
             nodeAddress: 'trac1verifynode',
             msb: mockMsb,
+            paymentRetryMs: 0,
+            paymentMaxAttempts: 1,
         });
         indexer.key = 'memory_indexer';
         indexer.append = async (key, value) => { appendCalls.push({ key, value }); };
