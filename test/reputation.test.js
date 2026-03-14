@@ -1,6 +1,8 @@
-import { describe, it } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'fs';
 import MnemexContract from '../contract/contract.js';
+import { MemoryIndexer } from '../features/memory-indexer/index.js';
 
 // ---------------------------------------------------------------------------
 // Mock contract context — same pattern as fees.test.js
@@ -55,7 +57,7 @@ describe('Phase 6 — Reputation Scores', () => {
         // First fee
         ctx.value = {
             memory_id: 'mem-001',
-            operation: 'read_open',
+            operation: 'read_gated',
             payer: 'payer-xxx',
             payment_txid: 'tx-001',
             amount: '100000000000000000',
@@ -67,7 +69,7 @@ describe('Phase 6 — Reputation Scores', () => {
         // Second fee
         ctx.value = {
             memory_id: 'mem-001',
-            operation: 'read_open',
+            operation: 'read_gated',
             payer: 'payer-yyy',
             payment_txid: 'tx-002',
             amount: '100000000000000000',
@@ -144,7 +146,7 @@ describe('Phase 6 — Reputation Scores', () => {
             key: 'record_fee',
             value: {
                 memory_id: 'feat-mem-001',
-                operation: 'read_open',
+                operation: 'read_gated',
                 payer: 'payer-feat',
                 payment_txid: 'feat-tx-001',
                 amount: '100000000000000000',
@@ -159,7 +161,7 @@ describe('Phase 6 — Reputation Scores', () => {
             key: 'record_fee',
             value: {
                 memory_id: 'feat-mem-001',
-                operation: 'read_open',
+                operation: 'read_gated',
                 payer: 'payer-feat-2',
                 payment_txid: 'feat-tx-002',
                 amount: '100000000000000000',
@@ -204,5 +206,344 @@ describe('Phase 6 — Reputation Scores', () => {
         assert.equal(result.reads, 0);
         assert.equal(result.slashes, 0);
         assert.equal(result.score, 0);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 7 — Follow / Unfollow
+// ---------------------------------------------------------------------------
+
+describe('Phase 7 — Follow / Unfollow', () => {
+
+    it('follow_agent creates bidirectional entries and increments counters', async () => {
+        const ctx = createMockContract();
+        ctx.address = 'follower-aaa';
+        ctx.value = { op: 'follow_agent', target: 'target-bbb' };
+
+        const result = await callContract('follow_agent', ctx);
+        assert.equal(result, undefined, 'Should not return error');
+
+        assert.deepEqual(ctx.state['follows/follower-aaa/target-bbb'], { ts: 0 });
+        assert.deepEqual(ctx.state['followers/target-bbb/follower-aaa'], { ts: 0 });
+        assert.equal(ctx.state['following_count/follower-aaa'], 1);
+        assert.equal(ctx.state['follower_count/target-bbb'], 1);
+    });
+
+    it('follow_agent rejects self-follow', async () => {
+        const ctx = createMockContract();
+        ctx.address = 'agent-aaa';
+        ctx.value = { op: 'follow_agent', target: 'agent-aaa' };
+
+        const result = await callContract('follow_agent', ctx);
+        assert.ok(result instanceof Error);
+        assert.match(result.message, /yourself/i);
+    });
+
+    it('follow_agent rejects double follow', async () => {
+        const ctx = createMockContract();
+        ctx.address = 'follower-aaa';
+        ctx.state['follows/follower-aaa/target-bbb'] = { ts: 100 };
+        ctx.value = { op: 'follow_agent', target: 'target-bbb' };
+
+        const result = await callContract('follow_agent', ctx);
+        assert.ok(result instanceof Error);
+        assert.match(result.message, /already/i);
+    });
+
+    it('follow_agent increments counters across multiple follows', async () => {
+        const ctx = createMockContract();
+        ctx.address = 'follower-aaa';
+
+        ctx.value = { op: 'follow_agent', target: 'target-bbb' };
+        await callContract('follow_agent', ctx);
+
+        ctx.value = { op: 'follow_agent', target: 'target-ccc' };
+        await callContract('follow_agent', ctx);
+
+        assert.equal(ctx.state['following_count/follower-aaa'], 2);
+        assert.equal(ctx.state['follower_count/target-bbb'], 1);
+        assert.equal(ctx.state['follower_count/target-ccc'], 1);
+    });
+
+    it('unfollow_agent removes entries and decrements counters', async () => {
+        const ctx = createMockContract();
+        ctx.address = 'follower-aaa';
+
+        // First follow
+        ctx.value = { op: 'follow_agent', target: 'target-bbb' };
+        await callContract('follow_agent', ctx);
+        assert.equal(ctx.state['following_count/follower-aaa'], 1);
+
+        // Then unfollow
+        ctx.value = { op: 'unfollow_agent', target: 'target-bbb' };
+        const result = await callContract('unfollow_agent', ctx);
+        assert.equal(result, undefined, 'Should not return error');
+
+        assert.equal(ctx.state['follows/follower-aaa/target-bbb'], null);
+        assert.equal(ctx.state['followers/target-bbb/follower-aaa'], null);
+        assert.equal(ctx.state['following_count/follower-aaa'], 0);
+        assert.equal(ctx.state['follower_count/target-bbb'], 0);
+    });
+
+    it('unfollow_agent rejects if not following', async () => {
+        const ctx = createMockContract();
+        ctx.address = 'follower-aaa';
+        ctx.value = { op: 'unfollow_agent', target: 'target-bbb' };
+
+        const result = await callContract('unfollow_agent', ctx);
+        assert.ok(result instanceof Error);
+        assert.match(result.message, /not following/i);
+    });
+
+    it('follower_count does not go below zero', async () => {
+        const ctx = createMockContract();
+        ctx.address = 'follower-aaa';
+        ctx.state['follows/follower-aaa/target-bbb'] = { ts: 100 };
+        ctx.state['following_count/follower-aaa'] = 0;
+        ctx.state['follower_count/target-bbb'] = 0;
+        ctx.value = { op: 'unfollow_agent', target: 'target-bbb' };
+
+        await callContract('unfollow_agent', ctx);
+        assert.equal(ctx.state['following_count/follower-aaa'], 0);
+        assert.equal(ctx.state['follower_count/target-bbb'], 0);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 7 — Rate Limiting
+// ---------------------------------------------------------------------------
+
+describe('Phase 7 — Rate Limiting', () => {
+    const TEST_DATA_DIR = './test-mnemex-data-ratelimit-' + Date.now();
+    let appendCalls;
+
+    const makeMockPeer = () => ({
+        base: { writable: true, append: async () => {} },
+        protocol: { instance: { generateNonce: () => 'nonce-' + Date.now() } },
+        wallet: { publicKey: 'aa'.repeat(32), sign: () => 'fake-sig', address: 'trac1ratelimit' },
+        msbClient: { pubKeyHexToAddress: (hex) => 'trac1_' + hex.slice(0, 8) },
+        sidechannel: { broadcast: () => {} },
+    });
+
+    after(() => {
+        if (fs.existsSync(TEST_DATA_DIR)) {
+            fs.rmSync(TEST_DATA_DIR, { recursive: true });
+        }
+    });
+
+    it('should accept writes under the limit', async () => {
+        appendCalls = [];
+        const indexer = new MemoryIndexer(makeMockPeer(), {
+            dataDir: TEST_DATA_DIR,
+            cortexChannels: ['cortex-crypto'],
+            rateLimitMax: 5,
+            rateLimitWindow: 60_000,
+        });
+        indexer.key = 'memory_indexer';
+        indexer.append = async (key, value) => { appendCalls.push({ key, value }); };
+        await indexer.start();
+
+        for (let i = 0; i < 5; i++) {
+            await indexer._handleMemoryWrite('cortex-crypto', {
+                v: 1, type: 'memory_write',
+                memory_id: 'rl-mem-' + i, cortex: 'crypto',
+                data: { i }, author: 'bb'.repeat(32), ts: Date.now(),
+            });
+        }
+
+        // All 5 should produce register_memory appends
+        const regCalls = appendCalls.filter(c => c.key === 'register_memory');
+        assert.equal(regCalls.length, 5);
+    });
+
+    it('should reject writes beyond the limit', async () => {
+        appendCalls = [];
+        const indexer = new MemoryIndexer(makeMockPeer(), {
+            dataDir: TEST_DATA_DIR,
+            cortexChannels: ['cortex-crypto'],
+            rateLimitMax: 3,
+            rateLimitWindow: 60_000,
+        });
+        indexer.key = 'memory_indexer';
+        indexer.append = async (key, value) => { appendCalls.push({ key, value }); };
+        await indexer.start();
+
+        for (let i = 0; i < 6; i++) {
+            await indexer._handleMemoryWrite('cortex-crypto', {
+                v: 1, type: 'memory_write',
+                memory_id: 'rl-over-' + i, cortex: 'crypto',
+                data: { i }, author: 'cc'.repeat(32), ts: Date.now(),
+            });
+        }
+
+        // Only 3 should go through
+        const regCalls = appendCalls.filter(c => c.key === 'register_memory');
+        assert.equal(regCalls.length, 3);
+    });
+
+    it('should reset counter after window expires', async () => {
+        appendCalls = [];
+        const indexer = new MemoryIndexer(makeMockPeer(), {
+            dataDir: TEST_DATA_DIR,
+            cortexChannels: ['cortex-crypto'],
+            rateLimitMax: 2,
+            rateLimitWindow: 100, // 100ms window for test speed
+        });
+        indexer.key = 'memory_indexer';
+        indexer.append = async (key, value) => { appendCalls.push({ key, value }); };
+        await indexer.start();
+
+        const author = 'dd'.repeat(32);
+
+        // Write 2 (fills limit)
+        for (let i = 0; i < 2; i++) {
+            await indexer._handleMemoryWrite('cortex-crypto', {
+                v: 1, type: 'memory_write',
+                memory_id: 'rl-reset-' + i, cortex: 'crypto',
+                data: { i }, author, ts: Date.now(),
+            });
+        }
+        assert.equal(appendCalls.filter(c => c.key === 'register_memory').length, 2);
+
+        // Wait for window to expire
+        await new Promise(r => setTimeout(r, 150));
+
+        // Should be able to write again
+        await indexer._handleMemoryWrite('cortex-crypto', {
+            v: 1, type: 'memory_write',
+            memory_id: 'rl-reset-after', cortex: 'crypto',
+            data: { after: true }, author, ts: Date.now(),
+        });
+        assert.equal(appendCalls.filter(c => c.key === 'register_memory').length, 3);
+    });
+
+    it('rate limit is per-author (different authors have separate counters)', async () => {
+        appendCalls = [];
+        const indexer = new MemoryIndexer(makeMockPeer(), {
+            dataDir: TEST_DATA_DIR,
+            cortexChannels: ['cortex-crypto'],
+            rateLimitMax: 1,
+            rateLimitWindow: 60_000,
+        });
+        indexer.key = 'memory_indexer';
+        indexer.append = async (key, value) => { appendCalls.push({ key, value }); };
+        await indexer.start();
+
+        // Author 1
+        await indexer._handleMemoryWrite('cortex-crypto', {
+            v: 1, type: 'memory_write',
+            memory_id: 'rl-auth1', cortex: 'crypto',
+            data: { x: 1 }, author: 'e1'.repeat(32), ts: Date.now(),
+        });
+        // Author 2
+        await indexer._handleMemoryWrite('cortex-crypto', {
+            v: 1, type: 'memory_write',
+            memory_id: 'rl-auth2', cortex: 'crypto',
+            data: { x: 2 }, author: 'e2'.repeat(32), ts: Date.now(),
+        });
+
+        const regCalls = appendCalls.filter(c => c.key === 'register_memory');
+        assert.equal(regCalls.length, 2);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 7 — Author Reputation in memory_response
+// ---------------------------------------------------------------------------
+
+describe('Phase 7 — Author Reputation in Responses', () => {
+    const TEST_DATA_DIR = './test-mnemex-data-rep-response-' + Date.now();
+    let broadcastCalls;
+
+    const makeMockPeer = (viewState = {}) => ({
+        base: {
+            writable: true,
+            append: async () => {},
+            view: {
+                get: async (key) => viewState[key] !== undefined ? viewState[key] : null,
+            },
+        },
+        protocol: { instance: { generateNonce: () => 'nonce-' + Date.now() } },
+        wallet: { publicKey: 'aa'.repeat(32), sign: () => 'fake-sig', address: 'trac1reptest' },
+        msbClient: { pubKeyHexToAddress: (hex) => 'trac1_' + hex.slice(0, 8) },
+        sidechannel: {
+            broadcast: (channel, message) => { broadcastCalls.push({ channel, message }); },
+        },
+    });
+
+    after(() => {
+        if (fs.existsSync(TEST_DATA_DIR)) {
+            fs.rmSync(TEST_DATA_DIR, { recursive: true });
+        }
+    });
+
+    it('memory_response includes author_reputation for open read', async () => {
+        broadcastCalls = [];
+        const author = 'ff'.repeat(32);
+        const viewState = {
+            ['rep/' + author + '/reads']: 42,
+            ['rep/' + author + '/slashes']: 1,
+            ['follower_count/' + author]: 7,
+        };
+
+        const indexer = new MemoryIndexer(makeMockPeer(viewState), {
+            dataDir: TEST_DATA_DIR,
+            cortexChannels: ['cortex-crypto'],
+        });
+        indexer.key = 'memory_indexer';
+        indexer.append = async () => {};
+        await indexer.start();
+
+        await indexer._handleMemoryWrite('cortex-crypto', {
+            v: 1, type: 'memory_write',
+            memory_id: 'rep-open-001', cortex: 'crypto',
+            data: { key: 'test' }, author, access: 'open', ts: Date.now(),
+        });
+        broadcastCalls = [];
+
+        const replies = [];
+        await indexer._handleMemoryRead('cortex-crypto', {
+            v: 1, type: 'memory_read', memory_id: 'rep-open-001',
+        }, (data) => replies.push(JSON.parse(data)));
+
+        assert.equal(replies.length, 1);
+        const rep = replies[0].author_reputation;
+        assert.ok(rep, 'Should include author_reputation');
+        assert.equal(rep.reads, 42);
+        assert.equal(rep.slashes, 1);
+        assert.equal(rep.followers, 7);
+        assert.equal(rep.score, 32); // 42 - (1 * 10)
+    });
+
+    it('author_reputation is null when view is unavailable', async () => {
+        broadcastCalls = [];
+        const author = 'gg'.repeat(32);
+
+        // Peer with no base.view
+        const peer = makeMockPeer();
+        delete peer.base.view;
+
+        const indexer = new MemoryIndexer(peer, {
+            dataDir: TEST_DATA_DIR,
+            cortexChannels: ['cortex-crypto'],
+        });
+        indexer.key = 'memory_indexer';
+        indexer.append = async () => {};
+        await indexer.start();
+
+        await indexer._handleMemoryWrite('cortex-crypto', {
+            v: 1, type: 'memory_write',
+            memory_id: 'rep-noview-001', cortex: 'crypto',
+            data: { key: 'test' }, author, access: 'open', ts: Date.now(),
+        });
+        broadcastCalls = [];
+
+        const replies = [];
+        await indexer._handleMemoryRead('cortex-crypto', {
+            v: 1, type: 'memory_read', memory_id: 'rep-noview-001',
+        }, (data) => replies.push(JSON.parse(data)));
+
+        assert.equal(replies.length, 1);
+        assert.equal(replies[0].author_reputation, null);
     });
 });

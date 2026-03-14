@@ -29,7 +29,7 @@ class MnemexContract extends Contract {
                 memory_id: { type: "string", min: 1, max: 256 },
                 cortex: { type: "string", min: 1, max: 256 },
                 author: { type: "string", min: 1, max: 256 },
-                access: { type: "enum", values: ["open", "gated", "public"] },
+                access: { type: "enum", values: ["open", "gated"] },
                 content_hash: { type: "string", min: 64, max: 64 },
                 ts: { type: "number", positive: true, integer: true },
                 tags: { type: "string", optional: true, max: 1024 },
@@ -58,7 +58,7 @@ class MnemexContract extends Contract {
                 $$type: "object",
                 op: { type: "string", min: 1, max: 128 },
                 memory_id: { type: "string", min: 1, max: 256 },
-                operation: { type: "enum", values: ["read_open", "read_gated", "read_public", "skill_download"] },
+                operation: { type: "enum", values: ["read_gated", "skill_download"] },
                 payer: { type: "string", min: 1, max: 256 },
                 payment_txid: { type: "string", min: 1, max: 256 },
                 amount: { type: "string", min: 1, max: 64 },
@@ -192,6 +192,26 @@ class MnemexContract extends Contract {
             }
         });
 
+        // follow_agent — follow another agent (TX command)
+        this.addSchema('follow_agent', {
+            value: {
+                $$strict: true,
+                $$type: "object",
+                op: { type: "string", min: 1, max: 128 },
+                target: { type: "string", min: 1, max: 128 }
+            }
+        });
+
+        // unfollow_agent — unfollow an agent (TX command)
+        this.addSchema('unfollow_agent', {
+            value: {
+                $$strict: true,
+                $$type: "object",
+                op: { type: "string", min: 1, max: 128 },
+                target: { type: "string", min: 1, max: 128 }
+            }
+        });
+
         // Feature entry schema for timer and future features
         this.addSchema('feature_entry', {
             key: { type: "string", min: 1, max: 256 },
@@ -279,9 +299,8 @@ class MnemexContract extends Contract {
 
                 // Determine creator percentage based on operation type
                 let creatorPct;
-                if (val.operation === 'read_open') creatorPct = 60n;
-                else if (val.operation === 'read_gated') creatorPct = 70n;
-                else creatorPct = 80n;
+                if (val.operation === 'read_gated') creatorPct = 70n;
+                else creatorPct = 80n; // skill_download
 
                 const creatorShare = amount * creatorPct / 100n;
                 const nodeShare = amount - creatorShare;
@@ -518,7 +537,6 @@ class MnemexContract extends Contract {
      * record_fee — record a fee payment and split revenue between creator and node pool.
      *
      * Fee splits by operation type:
-     * - read_open:      60% creator, 40% node pool
      * - read_gated:     70% creator, 30% node pool
      * - skill_download: 80% creator, 20% node pool
      *
@@ -546,8 +564,7 @@ class MnemexContract extends Contract {
 
         // Determine creator percentage based on operation type
         let creatorPct;
-        if (operation === 'read_open') creatorPct = 60n;
-        else if (operation === 'read_gated') creatorPct = 70n;
+        if (operation === 'read_gated') creatorPct = 70n;
         else creatorPct = 80n; // skill_download
 
         const creatorShare = amount * creatorPct / 100n;
@@ -1015,6 +1032,57 @@ class MnemexContract extends Contract {
             ts: ts,
             status: "active"
         });
+    }
+
+    /**
+     * follow_agent — follow another agent on the network.
+     *
+     * Storage:
+     * - follows/<follower>/<target>: { ts }
+     * - followers/<target>/<follower>: { ts }
+     * - following_count/<follower>: number
+     * - follower_count/<target>: number
+     */
+    async follow_agent() {
+        const target = this.value.target;
+        const follower = this.address;
+
+        if (follower === target) return new Error('Cannot follow yourself');
+
+        const existing = await this.get('follows/' + follower + '/' + target);
+        if (existing !== null) return new Error('Already following');
+
+        const currentTime = await this.get('currentTime');
+        const ts = currentTime !== null ? currentTime : 0;
+
+        const followingCount = ((await this.get('following_count/' + follower)) || 0) + 1;
+        const followerCount = ((await this.get('follower_count/' + target)) || 0) + 1;
+
+        await this.put('follows/' + follower + '/' + target, { ts });
+        await this.put('followers/' + target + '/' + follower, { ts });
+        await this.put('following_count/' + follower, followingCount);
+        await this.put('follower_count/' + target, followerCount);
+    }
+
+    /**
+     * unfollow_agent — unfollow an agent.
+     *
+     * Removes bidirectional index entries and decrements counters.
+     */
+    async unfollow_agent() {
+        const target = this.value.target;
+        const follower = this.address;
+
+        const existing = await this.get('follows/' + follower + '/' + target);
+        if (existing === null) return new Error('Not following');
+
+        const followingCount = Math.max(0, ((await this.get('following_count/' + follower)) || 0) - 1);
+        const followerCount = Math.max(0, ((await this.get('follower_count/' + target)) || 0) - 1);
+
+        await this.put('follows/' + follower + '/' + target, null);
+        await this.put('followers/' + target + '/' + follower, null);
+        await this.put('following_count/' + follower, followingCount);
+        await this.put('follower_count/' + target, followerCount);
     }
 }
 

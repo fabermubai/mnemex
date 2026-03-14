@@ -80,7 +80,7 @@ describe('Bulk sync — memory_sync_request / memory_sync_response', () => {
             author: PEER_ID,
             ts: 1700000003000,
             sig: null,
-            access: 'public',
+            access: 'open',
             content_hash: 'hash4',
             stored_at: Date.now(),
         }, null, 2));

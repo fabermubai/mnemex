@@ -38,6 +38,11 @@ export class MemoryIndexer extends Feature {
         this.relayTimeoutMs = options.relayTimeoutMs || 10_000; // 10 seconds
         this.peerId = peer.wallet?.publicKey || null;
 
+        // Rate limiting: max writes per author per time window
+        this.rateLimitWindow = options.rateLimitWindow || 3600_000; // 1h in ms
+        this.rateLimitMax = options.rateLimitMax || 100;             // max 100 writes/h/author
+        this.writeCounters = new Map(); // author → { count, windowStart }
+
         // Presence tracking
         this.presenceMap = new Map(); // peerKey → { address, nick, capabilities, lastSeen, ts }
         this.presenceTTL = 10 * 60 * 1000; // 10 minutes
@@ -241,6 +246,19 @@ export class MemoryIndexer extends Feature {
             return;
         }
 
+        // Rate limiting: max N writes per author per time window
+        const now = Date.now();
+        const counter = this.writeCounters.get(author);
+        if (counter && (now - counter.windowStart) < this.rateLimitWindow) {
+            if (counter.count >= this.rateLimitMax) {
+                console.log('MemoryIndexer: rate limit exceeded for', author.slice(0, 8) + '…');
+                return;
+            }
+            counter.count++;
+        } else {
+            this.writeCounters.set(author, { count: 1, windowStart: now });
+        }
+
         // Check if memory already exists locally — only the original author can update
         const filePath = path.join(this.dataDir, memory_id + '.json');
         if (fs.existsSync(filePath)) {
@@ -318,10 +336,30 @@ export class MemoryIndexer extends Feature {
      * - open:  60% creator, 40% node
      * - gated: 70% creator, 30% node
      */
+    /**
+     * Get reputation data for an author from contract state.
+     * Returns { reads, slashes, followers, score } or null if state is unavailable.
+     */
+    async _getAuthorReputation(author) {
+        const view = this.peer.base?.view;
+        if (!view) return null;
+        const reads = (await view.get('rep/' + author + '/reads')) || 0;
+        const slashes = (await view.get('rep/' + author + '/slashes')) || 0;
+        const followers = (await view.get('follower_count/' + author)) || 0;
+        return {
+            reads,
+            slashes,
+            followers,
+            score: reads - (slashes * 10)
+        };
+    }
+
     _computeFeeSplit(access, customAmount = null) {
         const total = BigInt(customAmount || this.defaultFeeAmount);
-        const creatorPct = access === 'gated' ? 70n : 60n;
-        const nodePct = access === 'gated' ? 30n : 40n;
+        // Only gated memories go through the payment gate (70/30 split)
+        // Skills use 80/20 but are handled separately in skill_request
+        const creatorPct = 70n;
+        const nodePct = 30n;
         return {
             creator_share: (total * creatorPct / 100n).toString(),
             node_share: (total * nodePct / 100n).toString()
@@ -392,6 +430,9 @@ export class MemoryIndexer extends Feature {
         const isAuthorRead = !!(msg.payer && msg.payer === stored.author);
         const hasPayment = !!(payment_txid_creator && payment_txid_node);
 
+        // Fetch author reputation (non-blocking — null if state unavailable)
+        const authorReputation = await this._getAuthorReputation(stored.author);
+
         // Author self-read: bypass payment entirely — no fee for reading your own data
         if (isAuthorRead && this.requirePayment && !hasPayment) {
             const response = {
@@ -404,15 +445,17 @@ export class MemoryIndexer extends Feature {
                 author: stored.author,
                 ts: stored.ts,
                 content_hash: stored.content_hash,
-                fee_recorded: false
+                fee_recorded: false,
+                author_reputation: authorReputation
             };
             this._respond(channel, response, replyFn);
             console.log('MemoryIndexer: author self-read (free) for', memory_id);
             return;
         }
 
-        // Public memories: always free, no payment gate
-        if (stored.access === 'public') {
+        // Open memories: always free, no payment gate
+        // (also handles legacy 'public' and missing access field)
+        if (stored.access === 'open' || stored.access === 'public' || !stored.access) {
             const response = {
                 v: 1,
                 type: 'memory_response',
@@ -423,14 +466,16 @@ export class MemoryIndexer extends Feature {
                 author: stored.author,
                 ts: stored.ts,
                 content_hash: stored.content_hash,
-                fee_recorded: false
+                fee_recorded: false,
+                author_reputation: authorReputation
             };
             this._respond(channel, response, replyFn);
-            console.log('MemoryIndexer: public read (free) for', memory_id);
+            console.log('MemoryIndexer: open read (free) for', memory_id);
             return;
         }
 
-        // Payment gate: no payment txids → return payment_required with split info
+        // Payment gate: only gated memories reach here
+        // No payment txids → return payment_required with split info
         if (this.requirePayment && !hasPayment) {
             const feeAmount = (stored.access === 'gated' && stored.price) ? stored.price : this.defaultFeeAmount;
             const split = this._computeFeeSplit(stored.access, feeAmount);
@@ -505,7 +550,8 @@ export class MemoryIndexer extends Feature {
             author: stored.author,
             ts: stored.ts,
             content_hash: stored.content_hash,
-            fee_recorded: hasPayment
+            fee_recorded: hasPayment,
+            author_reputation: authorReputation
         };
 
         this._respond(channel, response, replyFn);
@@ -518,7 +564,7 @@ export class MemoryIndexer extends Feature {
             const split = this._computeFeeSplit(stored.access, feeAmount);
             const feeEntry = {
                 memory_id: String(memory_id),
-                operation: stored.access === 'gated' ? 'read_gated' : 'read_open',
+                operation: 'read_gated',
                 payer: String(payer),
                 payment_txid: String(payment_txid_creator),
                 payment_txid_creator: String(payment_txid_creator),

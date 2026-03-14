@@ -200,6 +200,18 @@ class MnemexProtocol extends Protocol{
             return obj;
         }
 
+        if (json.op === 'follow_agent') {
+            obj.type = 'follow_agent';
+            obj.value = json;
+            return obj;
+        }
+
+        if (json.op === 'unfollow_agent') {
+            obj.type = 'unfollow_agent';
+            obj.value = json;
+            return obj;
+        }
+
         return null;
     }
 
@@ -231,7 +243,7 @@ class MnemexProtocol extends Protocol{
         console.log('    Check memory existence in author/cortex indexes.');
         console.log(' ');
         console.log('- Mnemex Fee Commands:');
-        console.log('- /record_fee --memory_id "<id>" --operation "read_open"|"read_gated"|"skill_download" --payer "<pubkey>" --payment_txid "<hash>" --amount "<bigint>"');
+        console.log('- /record_fee --memory_id "<id>" --operation "read_gated"|"skill_download" --payer "<pubkey>" --payment_txid "<hash>" --amount "<bigint>"');
         console.log('    Record a fee payment and split revenue (submits MSB TX).');
         console.log('- /get_balance --address "<pubkey>"');
         console.log('    Check earnings for an address (local read).');
@@ -273,6 +285,16 @@ class MnemexProtocol extends Protocol{
         console.log('    Register a new cortex channel — admin only (submits MSB TX).');
         console.log('- /list_cortex');
         console.log('    List all registered cortex channels (local read).');
+        console.log(' ');
+        console.log('- Mnemex Social Commands:');
+        console.log('- /follow_agent --target "<pubkey>"');
+        console.log('    Follow an agent (submits MSB TX, 0.03 $TNK).');
+        console.log('- /unfollow_agent --target "<pubkey>"');
+        console.log('    Unfollow an agent (submits MSB TX, 0.03 $TNK).');
+        console.log('- /get_followers --address "<pubkey>"');
+        console.log('    List followers of an address (local read).');
+        console.log('- /get_following --address "<pubkey>"');
+        console.log('    List agents followed by an address (local read).');
         console.log(' ');
         console.log('- System Commands:');
         console.log('- /get --key "<key>" [--confirmed true|false] | reads subnet state key (confirmed defaults to true).');
@@ -630,11 +652,11 @@ class MnemexProtocol extends Protocol{
             const amount = args.amount;
             const tsRaw = args.ts;
             if (!memoryId || !operation || !payer || !paymentTxid || !amount) {
-                console.log('Usage: /record_fee --memory_id "<id>" --operation "read_open"|"read_gated"|"skill_download" --payer "<pubkey>" --payment_txid "<hash>" --amount "<bigint>"');
+                console.log('Usage: /record_fee --memory_id "<id>" --operation "read_gated"|"skill_download" --payer "<pubkey>" --payment_txid "<hash>" --amount "<bigint>"');
                 return;
             }
-            if (operation !== 'read_open' && operation !== 'read_gated' && operation !== 'skill_download') {
-                console.log('Error: --operation must be "read_open", "read_gated", or "skill_download".');
+            if (operation !== 'read_gated' && operation !== 'skill_download') {
+                console.log('Error: --operation must be "read_gated" or "skill_download".');
                 return;
             }
             const ts = tsRaw ? Number(tsRaw) : Date.now();
@@ -682,13 +704,79 @@ class MnemexProtocol extends Protocol{
             }
             const reads = await this.getSigned('rep/' + address + '/reads');
             const slashes = await this.getSigned('rep/' + address + '/slashes');
+            const followers = await this.getSigned('follower_count/' + address);
+            const following = await this.getSigned('following_count/' + address);
             const r = reads !== null ? reads : 0;
             const s = slashes !== null ? slashes : 0;
+            const fc = followers !== null ? followers : 0;
+            const fw = following !== null ? following : 0;
             const score = r - (s * 10);
-            console.log('Address:', address);
-            console.log('Reads:  ', r);
-            console.log('Slashes:', s);
-            console.log('Score:  ', score);
+            console.log('Address:  ', address);
+            console.log('Reads:    ', r);
+            console.log('Slashes:  ', s);
+            console.log('Followers:', fc);
+            console.log('Following:', fw);
+            console.log('Score:    ', score);
+            return;
+        }
+
+        if (this.input.startsWith("/follow_agent")) {
+            const args = this.parseArgs(input);
+            const target = args.target;
+            if (!target) {
+                console.log('Usage: /follow_agent --target "<pubkey>"');
+                return;
+            }
+            const txPayload = { op: 'follow_agent', target: String(target) };
+            const command = this.safeJsonStringify(txPayload);
+            console.log('Submitting follow_agent TX...');
+            console.log('Run: /tx --command \'' + command + '\'');
+            return;
+        }
+
+        if (this.input.startsWith("/unfollow_agent")) {
+            const args = this.parseArgs(input);
+            const target = args.target;
+            if (!target) {
+                console.log('Usage: /unfollow_agent --target "<pubkey>"');
+                return;
+            }
+            const txPayload = { op: 'unfollow_agent', target: String(target) };
+            const command = this.safeJsonStringify(txPayload);
+            console.log('Submitting unfollow_agent TX...');
+            console.log('Run: /tx --command \'' + command + '\'');
+            return;
+        }
+
+        if (this.input.startsWith("/get_followers")) {
+            const args = this.parseArgs(input);
+            const address = args.address || args.addr || this.peer.wallet.publicKey;
+            console.log('Followers of', address + ':');
+            const results = await this.getRangeSigned('followers/' + address + '/', 'followers/' + address + '/~');
+            if (!results || results.length === 0) {
+                console.log('  (none)');
+            } else {
+                for (const entry of results) {
+                    const follower = entry.key.replace('followers/' + address + '/', '');
+                    console.log(' ', follower);
+                }
+            }
+            return;
+        }
+
+        if (this.input.startsWith("/get_following")) {
+            const args = this.parseArgs(input);
+            const address = args.address || args.addr || this.peer.wallet.publicKey;
+            console.log('Following by', address + ':');
+            const results = await this.getRangeSigned('follows/' + address + '/', 'follows/' + address + '/~');
+            if (!results || results.length === 0) {
+                console.log('  (none)');
+            } else {
+                for (const entry of results) {
+                    const target = entry.key.replace('follows/' + address + '/', '');
+                    console.log(' ', target);
+                }
+            }
             return;
         }
 

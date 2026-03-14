@@ -58,12 +58,12 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
 
     describe('record_fee', () => {
 
-        it('should split 60/40 for read_open', async () => {
+        it('should split 70/30 for read_gated (default)', async () => {
             const ctx = createMockContract();
             seedMemory(ctx.state, 'mem-001', 'author-aaa');
             ctx.value = {
                 memory_id: 'mem-001',
-                operation: 'read_open',
+                operation: 'read_gated',
                 payer: 'payer-xxx',
                 payment_txid: 'tx-001',
                 amount: '100000000000000000', // 0.1 TNK
@@ -75,10 +75,10 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
 
             const fee = ctx.state['fee/tx-001'];
             assert.ok(fee, 'Fee record should exist');
-            assert.equal(fee.creator_share, '60000000000000000');  // 60%
-            assert.equal(fee.node_share, '40000000000000000');     // 40%
-            assert.equal(ctx.state['balance/author-aaa'], '60000000000000000');
-            assert.equal(ctx.state['balance_nodes'], '40000000000000000');
+            assert.equal(fee.creator_share, '70000000000000000');  // 70%
+            assert.equal(fee.node_share, '30000000000000000');     // 30%
+            assert.equal(ctx.state['balance/author-aaa'], '70000000000000000');
+            assert.equal(ctx.state['balance_nodes'], '30000000000000000');
         });
 
         it('should split 70/30 for read_gated', async () => {
@@ -126,7 +126,7 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
 
             ctx.value = {
                 memory_id: 'mem-004',
-                operation: 'read_open',
+                operation: 'read_gated',
                 payer: 'payer-xxx',
                 payment_txid: 'tx-dup',
                 amount: '100000000000000000',
@@ -142,7 +142,7 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
             const ctx = createMockContract(); // no memory seeded
             ctx.value = {
                 memory_id: 'does-not-exist',
-                operation: 'read_open',
+                operation: 'read_gated',
                 payer: 'payer-xxx',
                 payment_txid: 'tx-ghost',
                 amount: '100000000000000000',
@@ -161,7 +161,7 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
             // First fee
             ctx.value = {
                 memory_id: 'mem-multi',
-                operation: 'read_open',
+                operation: 'read_gated',
                 payer: 'p1',
                 payment_txid: 'tx-a',
                 amount: '100000000000000000',
@@ -172,7 +172,7 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
             // Second fee
             ctx.value = {
                 memory_id: 'mem-multi',
-                operation: 'read_open',
+                operation: 'read_gated',
                 payer: 'p2',
                 payment_txid: 'tx-b',
                 amount: '200000000000000000',
@@ -180,10 +180,10 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
             };
             await callContract('record_fee', ctx);
 
-            // 60% of 100 + 60% of 200 = 60 + 120 = 180
-            assert.equal(ctx.state['balance/author-multi'], '180000000000000000');
-            // 40% of 100 + 40% of 200 = 40 + 80 = 120
-            assert.equal(ctx.state['balance_nodes'], '120000000000000000');
+            // 70% of 100 + 70% of 200 = 70 + 140 = 210
+            assert.equal(ctx.state['balance/author-multi'], '210000000000000000');
+            // 30% of 100 + 30% of 200 = 30 + 60 = 90
+            assert.equal(ctx.state['balance_nodes'], '90000000000000000');
         });
 
         it('should track per-node balance when served_by is provided', async () => {
@@ -191,7 +191,7 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
             seedMemory(ctx.state, 'mem-node', 'author-node');
             ctx.value = {
                 memory_id: 'mem-node',
-                operation: 'read_open',
+                operation: 'read_gated',
                 payer: 'payer-xxx',
                 payment_txid: 'tx-node-001',
                 amount: '100000000000000000',
@@ -201,10 +201,10 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
 
             await callContract('record_fee', ctx);
 
-            // Per-node balance: 40% of 0.1 TNK
-            assert.equal(ctx.state['balance/node/node-pubkey-aaa'], '40000000000000000');
+            // Per-node balance: 30% of 0.1 TNK
+            assert.equal(ctx.state['balance/node/node-pubkey-aaa'], '30000000000000000');
             // Global pool still updated
-            assert.equal(ctx.state['balance_nodes'], '40000000000000000');
+            assert.equal(ctx.state['balance_nodes'], '30000000000000000');
             // Fee record includes served_by
             const fee = ctx.state['fee/tx-node-001'];
             assert.equal(fee.served_by, 'node-pubkey-aaa');
@@ -216,7 +216,7 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
 
             ctx.value = {
                 memory_id: 'mem-node2',
-                operation: 'read_open',
+                operation: 'read_gated',
                 payer: 'p1',
                 payment_txid: 'tx-n2a',
                 amount: '100000000000000000',
@@ -227,7 +227,7 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
 
             ctx.value = {
                 memory_id: 'mem-node2',
-                operation: 'read_open',
+                operation: 'read_gated',
                 payer: 'p2',
                 payment_txid: 'tx-n2b',
                 amount: '200000000000000000',
@@ -236,8 +236,8 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
             };
             await callContract('record_fee', ctx);
 
-            // 40% of 100 + 40% of 200 = 40 + 80 = 120
-            assert.equal(ctx.state['balance/node/node-bbb'], '120000000000000000');
+            // 30% of 100 + 30% of 200 = 30 + 60 = 90
+            assert.equal(ctx.state['balance/node/node-bbb'], '90000000000000000');
         });
 
         it('should not create per-node balance when served_by is absent', async () => {
@@ -245,7 +245,7 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
             seedMemory(ctx.state, 'mem-nonode', 'author-nonode');
             ctx.value = {
                 memory_id: 'mem-nonode',
-                operation: 'read_open',
+                operation: 'read_gated',
                 payer: 'payer-xxx',
                 payment_txid: 'tx-nonode',
                 amount: '100000000000000000',
@@ -257,7 +257,7 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
             // No per-node balance key created
             assert.equal(ctx.state['balance/node/undefined'], undefined);
             // Global pool still works
-            assert.equal(ctx.state['balance_nodes'], '40000000000000000');
+            assert.equal(ctx.state['balance_nodes'], '30000000000000000');
             // Fee record has served_by: null
             assert.equal(ctx.state['fee/tx-nonode'].served_by, null);
         });
@@ -272,7 +272,7 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
 
             ctx.value = {
                 memory_id: 'mem-stats',
-                operation: 'read_open',
+                operation: 'read_gated',
                 payer: 'p1',
                 payment_txid: 'tx-s1',
                 amount: '30000000000000000', // 0.03 TNK
@@ -455,7 +455,7 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
 
             await indexer.start();
 
-            // Pre-store an open memory for read tests
+            // Pre-store a gated memory for read tests (only gated memories go through payment gate)
             await indexer._handleMemoryWrite('cortex-crypto', {
                 v: 1,
                 type: 'memory_write',
@@ -463,6 +463,7 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
                 cortex: 'crypto',
                 data: { key: 'ETH/USD', value: 3200 },
                 author: 'cc'.repeat(32),
+                access: 'gated',
                 ts: 1708617600000,
             });
 
@@ -478,15 +479,15 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
                 ts: 1708617600000,
             });
 
-            // Pre-store a public memory for free-read tests
+            // Pre-store an open memory for free-read tests
             await indexer._handleMemoryWrite('cortex-crypto', {
                 v: 1,
                 type: 'memory_write',
-                memory_id: 'public-mem-001',
+                memory_id: 'open-mem-001',
                 cortex: 'crypto',
                 data: { key: 'BTC/USD', value: 97000 },
                 author: 'dd'.repeat(32),
-                access: 'public',
+                access: 'open',
                 ts: 1708617600000,
             });
 
@@ -514,9 +515,9 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
             assert.equal(response.type, 'payment_required');
             assert.equal(response.memory_id, 'paid-mem-001');
             assert.equal(response.amount, '30000000000000000');
-            // 60/40 split for open memory
-            assert.equal(response.creator_share, '18000000000000000');
-            assert.equal(response.node_share, '12000000000000000');
+            // 70/30 split for gated memory
+            assert.equal(response.creator_share, '21000000000000000');
+            assert.equal(response.node_share, '9000000000000000');
             assert.equal(response.pay_to_creator, 'trac1creator_cccccccc');
             assert.equal(response.pay_to_node, 'trac1testnode');
             assert.equal(typeof response.ts, 'number');
@@ -565,13 +566,13 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
             assert.equal(appendCalls[0].key, 'record_fee');
             const feeVal = appendCalls[0].value;
             assert.equal(feeVal.memory_id, 'paid-mem-001');
-            assert.equal(feeVal.operation, 'read_open');
+            assert.equal(feeVal.operation, 'read_gated');
             assert.equal(feeVal.payer, 'dd'.repeat(32));
             assert.equal(feeVal.payment_txid_creator, 'tx-creator-123');
             assert.equal(feeVal.payment_txid_node, 'tx-node-456');
             assert.equal(feeVal.amount, '30000000000000000');
-            assert.equal(feeVal.creator_share, '18000000000000000');
-            assert.equal(feeVal.node_share, '12000000000000000');
+            assert.equal(feeVal.creator_share, '21000000000000000');
+            assert.equal(feeVal.node_share, '9000000000000000');
         });
 
         it('should return payment_required when only one txid is provided', async () => {
@@ -630,14 +631,14 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
             assert.equal(response.found, false);
         });
 
-        it('public memory served without payment', async () => {
+        it('open memory served without payment', async () => {
             broadcastCalls = [];
             const replies = [];
 
             await indexer._handleMemoryRead('cortex-crypto', {
                 v: 1,
                 type: 'memory_read',
-                memory_id: 'public-mem-001',
+                memory_id: 'open-mem-001',
             }, (data) => replies.push(JSON.parse(data)));
 
             assert.equal(replies.length, 1);
@@ -647,14 +648,14 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
             assert.deepEqual(response.data, { key: 'BTC/USD', value: 97000 });
         });
 
-        it('public memory read does not record fee', async () => {
+        it('open memory read does not record fee', async () => {
             appendCalls = [];
             const replies = [];
 
             await indexer._handleMemoryRead('cortex-crypto', {
                 v: 1,
                 type: 'memory_read',
-                memory_id: 'public-mem-001',
+                memory_id: 'open-mem-001',
             }, (data) => replies.push(JSON.parse(data)));
 
             const response = replies[0];
@@ -696,10 +697,10 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
             assert.equal(response.node_share, '150000000000000000');    // 30%
         });
 
-        it('should use default price for open memory even if price field present', async () => {
+        it('should serve open memory for free even if price field present', async () => {
             broadcastCalls = [];
 
-            // Store an open memory with price (should be ignored)
+            // Store an open memory with price (should be ignored — open = free)
             await indexer._handleMemoryWrite('cortex-crypto', {
                 v: 1,
                 type: 'memory_write',
@@ -713,16 +714,18 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
             });
             broadcastCalls = [];
 
+            const replies = [];
             await indexer._handleMemoryRead('cortex-crypto', {
                 v: 1,
                 type: 'memory_read',
                 memory_id: 'open-with-price',
-            });
+            }, (data) => replies.push(JSON.parse(data)));
 
-            assert.equal(broadcastCalls.length, 1);
-            const response = JSON.parse(broadcastCalls[0].message);
-            assert.equal(response.type, 'payment_required');
-            assert.equal(response.amount, '30000000000000000'); // default 0.03 TNK
+            assert.equal(replies.length, 1);
+            const response = replies[0];
+            assert.equal(response.type, 'memory_response');
+            assert.equal(response.found, true);
+            assert.equal(response.fee_recorded, false);
         });
 
         it('_computeFeeSplit with custom amount should split correctly', () => {
@@ -946,12 +949,12 @@ describe('MemoryIndexer — MSB dual-txid verification', () => {
         indexer.append = async (key, value) => { appendCalls.push({ key, value }); };
         await indexer.start();
 
-        // Write a memory first
+        // Write a gated memory first (only gated goes through payment gate)
         await indexer._handleMemoryWrite('cortex-crypto', {
             v: 1, type: 'memory_write',
             memory_id: 'verify-mem-001', cortex: 'crypto',
             data: { key: 'SOL/USD', value: 120 },
-            author: 'ee'.repeat(32), ts: 1708617600000,
+            author: 'ee'.repeat(32), access: 'gated', ts: 1708617600000,
         });
         broadcastCalls = [];
         appendCalls = [];

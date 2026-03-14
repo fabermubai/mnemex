@@ -127,10 +127,10 @@ describe('Memory Flow — Phase 1 MVP', () => {
         assert.equal(meta.ts, 1708617600000);
     });
 
-    it('memory_read should respond with stored data', () => {
+    it('memory_read should respond with stored data', async () => {
         broadcastCalls = [];
 
-        indexer._handleMemoryRead('cortex-crypto', {
+        await indexer._handleMemoryRead('cortex-crypto', {
             v: 1,
             type: 'memory_read',
             memory_id: 'test-memory-001',
@@ -152,10 +152,10 @@ describe('Memory Flow — Phase 1 MVP', () => {
         assert.equal(response.content_hash.length, 64);
     });
 
-    it('memory_read should respond with found:false for unknown memory', () => {
+    it('memory_read should respond with found:false for unknown memory', async () => {
         broadcastCalls = [];
 
-        indexer._handleMemoryRead('cortex-crypto', {
+        await indexer._handleMemoryRead('cortex-crypto', {
             v: 1,
             type: 'memory_read',
             memory_id: 'nonexistent-memory-id',
