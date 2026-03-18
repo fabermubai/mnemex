@@ -538,22 +538,27 @@ await peer.ready();
  * auto_add_writers is still null — a race condition that leaves Agent 2
  * permanently non-writable.
  * ──────────────────────────────────────────────────────────────────────── */
-try {
-  const nonce = peer.protocol.instance.generateNonce();
-  const msg = { type: 'setAutoAddWriters', key: 'on' };
-  const hash = peer.wallet.sign(JSON.stringify(msg) + nonce);
-  await peer.base.append({
-    type: 'setAutoAddWriters',
-    key: 'on',
-    value: { msg },
-    hash,
-    nonce,
-  });
-  console.log('Auto-add writers: enabled (early)');
-} catch (err) {
-  // Non-admin peers cannot set this — silently skip.
-  if (err?.message !== 'Peer is not writable.') {
-    console.error('Auto-add writers failed:', err?.message ?? err);
+// Only the admin (bootstrap) peer should set this flag.
+// Non-admin peers that are writable would hang on append() because
+// the indexer isn't connected yet at this point in startup.
+const isBootstrap = peer.writerLocalKey === peer.base?.key?.toString('hex');
+if (isBootstrap) {
+  try {
+    const nonce = peer.protocol.instance.generateNonce();
+    const msg = { type: 'setAutoAddWriters', key: 'on' };
+    const hash = peer.wallet.sign(JSON.stringify(msg) + nonce);
+    await peer.base.append({
+      type: 'setAutoAddWriters',
+      key: 'on',
+      value: { msg },
+      hash,
+      nonce,
+    });
+    console.log('Auto-add writers: enabled (early)');
+  } catch (err) {
+    if (err?.message !== 'Peer is not writable.') {
+      console.error('Auto-add writers failed:', err?.message ?? err);
+    }
   }
 }
 
