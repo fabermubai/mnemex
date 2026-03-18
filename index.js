@@ -600,12 +600,20 @@ if (!_base.writable) {
 }
 
 // --- Fix 2: Activate remote writer cores for replication ---
+let _activatedCores = 0;
 const _coreActivationInterval = setInterval(async () => {
   try {
+    let total = 0, remote = 0;
     for (const w of _base.activeWriters) {
+      total++;
       if (w.core && !w.core.closed && !_base._isLocalCore(w.core)) {
+        remote++;
         _base.store.get({ key: w.core.key, active: true });
       }
+    }
+    if (remote > _activatedCores) {
+      console.log(`[core-fix] Activated ${remote} remote writer core(s) (${total} total writers)`);
+      _activatedCores = remote;
     }
   } catch (_) {}
 }, 10000);
