@@ -557,6 +557,16 @@ try {
   }
 }
 
+/* ── Autobase writer-detection fix ──────────────────────────────────────
+ * Autobase caches localWriter on first check and never re-evaluates,
+ * so a peer added as writer after startup never discovers it.
+ * We override _updateLocalWriter to always re-read the system state.
+ * ──────────────────────────────────────────────────────────────────────── */
+const _base = peer.base;
+_base._updateLocalWriter = async function (sys) {
+  await _base._getWriterByKey(_base.local.key, -1, 0, true, false, sys);
+};
+
 peer._msb = msb;
 peer._mnemexConfig = mnemexConfig;
 peer._peerStorePath = peerStorePath;
