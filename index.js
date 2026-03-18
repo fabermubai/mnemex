@@ -558,30 +558,26 @@ try {
 }
 
 /* ── Autobase writer-detection fix ──────────────────────────────────────
- * Autobase caches localWriter on first check and never re-evaluates,
- * so a peer added as writer after startup never discovers it.
- * We patch _updateLocalWriter to re-read system state when the local
- * writer exists but is marked as removed (i.e. not yet recognized).
- * We also periodically check so the peer detects promotion mid-session.
+ * Autobase caches localWriter.isRemoved on first check and never
+ * re-evaluates, so a peer added as writer after startup never discovers
+ * it.  We periodically query the system Hyperbee directly (outside the
+ * drain cycle) to detect when our key has been added, then flip
+ * localWriter.isRemoved = false.  The getter `base.writable` returns
+ * `localWriter !== null && !localWriter.isRemoved`, so this is enough.
  * ──────────────────────────────────────────────────────────────────────── */
 const _base = peer.base;
-_base._updateLocalWriter = async function (sys) {
-  if (_base.localWriter && !_base.localWriter.closed && !_base.localWriter.isRemoved) return;
-  await _base._getWriterByKey(_base.local.key, -1, 0, true, false, sys);
-};
-
-// Periodically re-check writer status (every 5s) for non-writable peers
 const _writerCheckInterval = setInterval(async () => {
   try {
-    if (_base.writable || !_base._applyState?.system) return;
-    await _base._getWriterByKey(_base.local.key, -1, 0, true, false, _base._applyState.system);
-    if (_base.writable) {
+    if (_base.writable) { clearInterval(_writerCheckInterval); return; }
+    if (!_base.localWriter || !_base._applyState?.system) return;
+    const info = await _base._applyState.system.get(_base.local.key);
+    if (info && !info.isRemoved) {
+      _base.localWriter.isRemoved = false;
       console.log('Writer promotion detected — this peer is now writable.');
       clearInterval(_writerCheckInterval);
     }
   } catch (_) {}
 }, 5000);
-// Clean up on close
 _base.on('close', () => clearInterval(_writerCheckInterval));
 
 peer._msb = msb;
