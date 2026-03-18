@@ -566,17 +566,29 @@ try {
  * `localWriter !== null && !localWriter.isRemoved`, so this is enough.
  * ──────────────────────────────────────────────────────────────────────── */
 const _base = peer.base;
+const _writerLocalKeyHex = peer.writerLocalKey;
+console.log(`[writer-fix] localKey=${_writerLocalKeyHex}, writable=${_base.writable}, localWriter=${!!_base.localWriter}, isRemoved=${_base.localWriter?.isRemoved}`);
 const _writerCheckInterval = setInterval(async () => {
   try {
-    if (_base.writable) { clearInterval(_writerCheckInterval); return; }
-    if (!_base.localWriter || !_base._applyState?.system) return;
+    if (_base.writable) {
+      console.log('[writer-fix] already writable — stopping checks.');
+      clearInterval(_writerCheckInterval);
+      return;
+    }
+    const hasLW = !!_base.localWriter;
+    const hasSys = !!_base._applyState?.system;
+    if (!hasLW || !hasSys) {
+      console.log(`[writer-fix] skip: localWriter=${hasLW}, system=${hasSys}`);
+      return;
+    }
     const info = await _base._applyState.system.get(_base.local.key);
+    console.log(`[writer-fix] system.get(localKey) =>`, info ? JSON.stringify({ isRemoved: info.isRemoved, length: info.length }) : 'null');
     if (info && !info.isRemoved) {
       _base.localWriter.isRemoved = false;
-      console.log('Writer promotion detected — this peer is now writable.');
+      console.log('[writer-fix] Writer promotion detected — this peer is now writable.');
       clearInterval(_writerCheckInterval);
     }
-  } catch (_) {}
+  } catch (e) { console.log('[writer-fix] error:', e.message); }
 }, 5000);
 _base.on('close', () => clearInterval(_writerCheckInterval));
 
