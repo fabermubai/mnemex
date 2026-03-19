@@ -887,17 +887,12 @@ if (scBridge) {
           price: message.price || undefined,
           sig: message.sig || undefined,
         };
-        const origScW = memoryIndexer.peer.sidechannel;
-        memoryIndexer.peer.sidechannel = {
-          broadcast: (_ch, data) => {
-            // Also broadcast to network via real sidechannel
-            origScW.broadcast(_ch, data);
-          }
-        };
+        // Broadcast to network FIRST so other Memory Nodes store it
+        sidechannel.broadcast(cortexW, JSON.stringify(writeMsg));
+        // Then process locally (store file + register on-chain)
         memoryIndexer._handleMemoryWrite(cortexW, writeMsg)
           .then(() => reply({ type: 'memory_write_ok', memory_id: writeMsg.memory_id }))
-          .catch((err) => sendError(err?.message ?? String(err)))
-          .finally(() => { memoryIndexer.peer.sidechannel = origScW; });
+          .catch((err) => sendError(err?.message ?? String(err)));
         return;
       }
 
