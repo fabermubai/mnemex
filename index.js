@@ -599,25 +599,19 @@ if (!_base.writable) {
   _base.on('close', () => clearInterval(_writerCheckInterval));
 }
 
-// --- Fix 2: Activate remote writer cores for replication ---
-let _activatedCores = 0;
-const _coreActivationInterval = setInterval(async () => {
-  try {
-    let total = 0, remote = 0;
-    for (const w of _base.activeWriters) {
-      total++;
-      if (w.core && !w.core.closed && !_base._isLocalCore(w.core)) {
-        remote++;
-        _base.store.get({ key: w.core.key, active: true });
-      }
-    }
-    if (remote > _activatedCores) {
-      console.log(`[core-fix] Activated ${remote} remote writer core(s) (${total} total writers)`);
-      _activatedCores = remote;
-    }
-  } catch (_) {}
-}, 10000);
-_base.on('close', () => clearInterval(_coreActivationInterval));
+// --- Fix 2: Force-replicate remote writer cores ---
+// Autobase opens writer cores with active:false, so they never replicate.
+// We monkey-patch _makeWriterCore to use active:true for remote cores.
+const _origMakeWriterCore = _base._makeWriterCore.bind(_base);
+_base._makeWriterCore = function (key) {
+  const core = _origMakeWriterCore(key);
+  // If it's a remote core, re-open with active:true to force replication
+  if (!_base._isLocalCore(core)) {
+    _base.store.get({ key, active: true });
+    console.log(`[core-fix] Activated remote writer core: ${key.toString('hex').slice(0, 12)}...`);
+  }
+  return core;
+};
 
 peer._msb = msb;
 peer._mnemexConfig = mnemexConfig;
