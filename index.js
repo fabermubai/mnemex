@@ -538,9 +538,9 @@ await peer.ready();
  * auto_add_writers is still null — a race condition that leaves Agent 2
  * permanently non-writable.
  * ──────────────────────────────────────────────────────────────────────── */
-// Only the admin (bootstrap) peer should set this flag.
-// Non-admin peers that are writable would hang on append() because
-// the indexer isn't connected yet at this point in startup.
+// Only the bootstrap peer sets this flag. Non-bootstrap peers that are
+// already writable would hang on append() because the indexer isn't
+// connected yet at startup.
 const isBootstrap = peer.writerLocalKey === peer.base?.key?.toString('hex');
 if (isBootstrap) {
   try {
@@ -561,84 +561,6 @@ if (isBootstrap) {
     }
   }
 }
-
-/* ── Autobase writer fixes ──────────────────────────────────────────────
- * Two bugs in Autobase prevent dynamic writer onboarding:
- *
- * 1. Writer detection: Autobase caches localWriter.isRemoved on first
- *    check and never re-evaluates. A peer added as writer after startup
- *    never discovers it. Fix: poll system Hyperbee every 5s and flip
- *    localWriter.isRemoved = false when our key appears.
- *
- * 2. Core replication: Autobase opens remote writer cores with
- *    active: false (index.js:1094), so they are never announced for
- *    replication. A new writer's core stays invisible to the indexer.
- *    Fix: periodically re-open remote writer cores with active: true
- *    so the corestore announces and replicates them.
- * ──────────────────────────────────────────────────────────────────────── */
-const _base = peer.base;
-
-// --- Fix 1: Writer detection for non-writable peers ---
-if (!_base.writable) {
-  const _writerCheckInterval = setInterval(async () => {
-    try {
-      if (_base.writable) {
-        console.log('[writer-fix] Writer promotion detected — now writable.');
-        clearInterval(_writerCheckInterval);
-        return;
-      }
-      if (!_base.localWriter || !_base._applyState?.system) return;
-      const info = await _base._applyState.system.get(_base.local.key);
-      if (info && !info.isRemoved) {
-        _base.localWriter.isRemoved = false;
-        console.log('[writer-fix] Writer promotion detected — now writable.');
-        clearInterval(_writerCheckInterval);
-      }
-    } catch (_) {}
-  }, 5000);
-  _base.on('close', () => clearInterval(_writerCheckInterval));
-}
-
-// --- Fix 2: Force-replicate remote writer cores ---
-// Autobase opens writer cores with active:false, so they never replicate.
-// We monkey-patch _makeWriterCore to use active:true for remote cores,
-// AND periodically scan the system Hyperbee for writers whose cores
-// aren't yet in activeWriters, opening them with active:true.
-const _origMakeWriterCore = _base._makeWriterCore.bind(_base);
-_base._makeWriterCore = function (key) {
-  const core = _origMakeWriterCore(key);
-  if (!_base._isLocalCore(core)) {
-    _base.store.get({ key, active: true });
-    console.log(`[core-fix] Activated remote writer core: ${key.toString('hex').slice(0, 12)}...`);
-  }
-  return core;
-};
-
-// Periodically scan the system for writers whose cores aren't active,
-// open them with active:true, and bump Autobase to re-drain.
-const _knownCores = new Set();
-const _coreDiscoveryInterval = setInterval(async () => {
-  try {
-    const sys = _base._applyState?.system;
-    if (!sys) return;
-    let activated = 0;
-    for await (const { key, value } of sys.list()) {
-      if (!key || !value || value.isRemoved) continue;
-      const hex = Buffer.from(key).toString('hex');
-      if (_knownCores.has(hex)) continue;
-      _knownCores.add(hex);
-      // Skip local core
-      if (hex === peer.writerLocalKey) continue;
-      // Force-open with active:true and request data to trigger replication
-      const core = _base.store.get({ key, active: true, writable: false });
-      core.ready().then(() => core.update()).catch(() => {});
-      activated++;
-      console.log(`[core-fix] Activated writer core: ${hex.slice(0, 12)}... (len=${core.length})`);
-    }
-    if (activated > 0) _base._queueBump();
-  } catch (_) {}
-}, 10000);
-_base.on('close', () => clearInterval(_coreDiscoveryInterval));
 
 peer._msb = msb;
 peer._mnemexConfig = mnemexConfig;
