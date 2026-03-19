@@ -15,7 +15,7 @@ let appendCalls;
 let broadcastCalls;
 
 const mockPeer = {
-    base: { writable: true, append: async () => {} },
+    base: { writable: true, isIndexer: true, append: async () => {} },
     protocol: { instance: { generateNonce: () => 'nonce-' + Date.now() } },
     wallet: { publicKey: 'cc'.repeat(32), sign: () => 'fake-sig', address: 'trac1testnode' },
     sidechannel: {

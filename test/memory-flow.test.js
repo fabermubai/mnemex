@@ -15,6 +15,7 @@ describe('Memory Flow — Phase 1 MVP', () => {
     const mockPeer = {
         base: {
             writable: true,
+            isIndexer: true,
             append: async () => {},
         },
         protocol: {

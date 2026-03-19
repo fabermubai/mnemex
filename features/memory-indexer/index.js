@@ -69,12 +69,9 @@ export class MemoryIndexer extends Feature {
         const isIndexer = this.peer.base?.writable && (this.peer.base?.isIndexer ?? false);
         if (!isIndexer) {
             this.append = async (key, value) => {
-                // Try direct append first
-                try {
-                    await origAppend(key, value);
-                    return;
-                } catch (_) {}
-                // Relay via sidechannel for an indexer to pick up
+                // Non-indexer: always relay via sidechannel.
+                // Direct append appears to succeed locally but never
+                // replicates to the indexer (Autobase core replication bug).
                 if (this.peer.sidechannel) {
                     const relayMsg = JSON.stringify({
                         v: 1,

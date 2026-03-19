@@ -14,7 +14,7 @@ describe('Bulk sync — memory_sync_request / memory_sync_response', () => {
     const OTHER_PEER_ID = 'bb'.repeat(32);
 
     const mockPeer = {
-        base: { writable: true, append: async () => {} },
+        base: { writable: true, isIndexer: true, append: async () => {} },
         protocol: { instance: { generateNonce: () => 'nonce-' + Date.now() } },
         wallet: { publicKey: PEER_ID, sign: () => 'fake-sig' },
         sidechannel: {

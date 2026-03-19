@@ -424,7 +424,7 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
         let broadcastCalls;
 
         const mockPeer = {
-            base: { writable: true, append: async () => {} },
+            base: { writable: true, isIndexer: true, append: async () => {} },
             protocol: { instance: { generateNonce: () => 'nonce-' + Date.now() } },
             wallet: { publicKey: 'cc'.repeat(32), sign: () => 'fake-sig', address: 'trac1testnode' },
             msbClient: {
@@ -907,7 +907,7 @@ describe('MemoryIndexer — MSB dual-txid verification', () => {
     let appendCalls;
 
     const makeMockPeer = () => ({
-        base: { writable: true, append: async () => {} },
+        base: { writable: true, isIndexer: true, append: async () => {} },
         protocol: { instance: { generateNonce: () => 'nonce-' + Date.now() } },
         wallet: { publicKey: 'ee'.repeat(32), sign: () => 'fake-sig', address: 'trac1verifynode' },
         msbClient: {

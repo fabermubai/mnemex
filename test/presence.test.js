@@ -9,7 +9,7 @@ describe('Presence — peer_announce & getOnlinePeers', () => {
     let indexer;
 
     const mockPeer = {
-        base: { writable: true, append: async () => {} },
+        base: { writable: true, isIndexer: true, append: async () => {} },
         protocol: { instance: { generateNonce: () => 'nonce-' + Date.now() } },
         wallet: { publicKey: 'aa'.repeat(32), sign: () => 'fake-sig' },
         sidechannel: { broadcast: () => {} },

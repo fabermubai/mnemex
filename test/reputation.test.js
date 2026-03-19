@@ -318,7 +318,7 @@ describe('Phase 7 — Rate Limiting', () => {
     let appendCalls;
 
     const makeMockPeer = () => ({
-        base: { writable: true, append: async () => {} },
+        base: { writable: true, isIndexer: true, append: async () => {} },
         protocol: { instance: { generateNonce: () => 'nonce-' + Date.now() } },
         wallet: { publicKey: 'aa'.repeat(32), sign: () => 'fake-sig', address: 'trac1ratelimit' },
         msbClient: { pubKeyHexToAddress: (hex) => 'trac1_' + hex.slice(0, 8) },
@@ -458,6 +458,7 @@ describe('Phase 7 — Author Reputation in Responses', () => {
     const makeMockPeer = (viewState = {}) => ({
         base: {
             writable: true,
+            isIndexer: true,
             append: async () => {},
             view: {
                 get: async (key) => viewState[key] !== undefined ? viewState[key] : null,
