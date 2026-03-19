@@ -1002,6 +1002,22 @@ sidechannel
     setTimeout(emitPeerAnnounce, 3_000);
     setInterval(emitPeerAnnounce, 2 * 60 * 1000);
 
+    // Cortex channel keepalive — force Protomux pairing on all cortex
+    // channels. Without this, remote peers may never open the cortex
+    // Protomux channels (the initial pair attempt times out before the
+    // remote peer has joined the protocol).
+    const cortexKeepalive = () => {
+      for (const ch of cortexChannels) {
+        sidechannel.broadcast(ch, JSON.stringify({
+          v: 1, type: 'peer_announce',
+          peer_key: peer.wallet.publicKey,
+          ts: Date.now(),
+        }));
+      }
+    };
+    setTimeout(cortexKeepalive, 10_000);
+    setInterval(cortexKeepalive, 60_000);
+
     // Bulk sync — fetch missing open memories from peers (after peer announce)
     setTimeout(() => {
       try {
