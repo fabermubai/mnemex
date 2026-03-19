@@ -61,6 +61,38 @@ export class MemoryIndexer extends Feature {
             fs.mkdirSync(this.skillsDir, { recursive: true });
         }
 
+        // ── Append relay ──────────────────────────────────────────────
+        // If this peer isn't the Autobase indexer, relay append operations
+        // via sidechannel so an indexer can execute them on our behalf.
+        // If this peer IS the indexer, append directly (default behavior).
+        const origAppend = this.append.bind(this);
+        const isIndexer = this.peer.base?.writable && (this.peer.base?.isIndexer ?? false);
+        if (!isIndexer) {
+            this.append = async (key, value) => {
+                // Try direct append first
+                try {
+                    await origAppend(key, value);
+                    return;
+                } catch (_) {}
+                // Relay via sidechannel for an indexer to pick up
+                if (this.peer.sidechannel) {
+                    const relayMsg = JSON.stringify({
+                        v: 1,
+                        type: 'append_relay',
+                        key,
+                        value,
+                        origin: this.peer.wallet?.publicKey || 'unknown',
+                        ts: Date.now(),
+                    });
+                    this.peer.sidechannel.broadcast(
+                        this.cortexChannels[0] || 'cortex-crypto',
+                        relayMsg
+                    );
+                    console.log(`MemoryIndexer: relayed append (${key}) via sidechannel`);
+                }
+            };
+        }
+
         // Try to load registered cortex channels from contract state
         try {
             if (this.peer.base && this.peer.base.view) {
@@ -144,6 +176,19 @@ export class MemoryIndexer extends Feature {
             this._handleSyncResponse(msg, connection).catch((err) => {
                 console.error('MemoryIndexer: memory_sync_response error:', err?.message ?? err);
             });
+            return true;
+        }
+
+        // Append relay: indexers execute appends on behalf of non-indexer peers
+        if (msg.type === 'append_relay' && msg.key && msg.value) {
+            const isIdx = this.peer.base?.writable && (this.peer.base?.isIndexer ?? false);
+            if (isIdx) {
+                this.append(msg.key, msg.value).then(() => {
+                    console.log(`MemoryIndexer: executed relayed append (${msg.key}) from ${(msg.origin || '?').slice(0, 12)}...`);
+                }).catch((err) => {
+                    console.error('MemoryIndexer: relayed append failed:', err?.message ?? err);
+                });
+            }
             return true;
         }
 
