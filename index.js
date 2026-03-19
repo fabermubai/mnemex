@@ -629,10 +629,11 @@ const _coreDiscoveryInterval = setInterval(async () => {
       _knownCores.add(hex);
       // Skip local core
       if (hex === peer.writerLocalKey) continue;
-      // Force-open with active:true to trigger Hyperswarm replication
-      _base.store.get({ key, active: true });
+      // Force-open with active:true and request data to trigger replication
+      const core = _base.store.get({ key, active: true, writable: false });
+      core.ready().then(() => core.update()).catch(() => {});
       activated++;
-      console.log(`[core-fix] Activated writer core: ${hex.slice(0, 12)}...`);
+      console.log(`[core-fix] Activated writer core: ${hex.slice(0, 12)}... (len=${core.length})`);
     }
     if (activated > 0) _base._queueBump();
   } catch (_) {}
