@@ -601,17 +601,26 @@ if (!_base.writable) {
 
 // --- Fix 2: Force-replicate remote writer cores ---
 // Autobase opens writer cores with active:false, so they never replicate.
-// We monkey-patch _makeWriterCore to use active:true for remote cores.
+// We monkey-patch _makeWriterCore to use active:true for remote cores,
+// AND periodically scan the system Hyperbee for writers whose cores
+// aren't yet in activeWriters, opening them with active:true.
 const _origMakeWriterCore = _base._makeWriterCore.bind(_base);
 _base._makeWriterCore = function (key) {
   const core = _origMakeWriterCore(key);
-  // If it's a remote core, re-open with active:true to force replication
   if (!_base._isLocalCore(core)) {
     _base.store.get({ key, active: true });
     console.log(`[core-fix] Activated remote writer core: ${key.toString('hex').slice(0, 12)}...`);
   }
   return core;
 };
+
+// Periodically bump Autobase to force it to re-drain and discover
+// new writer cores that were added via /add_writer or autoAddWriter.
+// Without this, the linearizer never rebuilds to include new writers.
+const _bumpInterval = setInterval(() => {
+  try { _base._queueBump(); } catch (_) {}
+}, 15000);
+_base.on('close', () => clearInterval(_bumpInterval));
 
 peer._msb = msb;
 peer._mnemexConfig = mnemexConfig;
