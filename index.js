@@ -614,13 +614,30 @@ _base._makeWriterCore = function (key) {
   return core;
 };
 
-// Periodically bump Autobase to force it to re-drain and discover
-// new writer cores that were added via /add_writer or autoAddWriter.
-// Without this, the linearizer never rebuilds to include new writers.
-const _bumpInterval = setInterval(() => {
-  try { _base._queueBump(); } catch (_) {}
-}, 15000);
-_base.on('close', () => clearInterval(_bumpInterval));
+// Periodically scan the system for writers whose cores aren't active,
+// open them with active:true, and bump Autobase to re-drain.
+const _knownCores = new Set();
+const _coreDiscoveryInterval = setInterval(async () => {
+  try {
+    const sys = _base._applyState?.system;
+    if (!sys) return;
+    let activated = 0;
+    for await (const { key, value } of sys.list()) {
+      if (!key || !value || value.isRemoved) continue;
+      const hex = Buffer.from(key).toString('hex');
+      if (_knownCores.has(hex)) continue;
+      _knownCores.add(hex);
+      // Skip local core
+      if (hex === peer.writerLocalKey) continue;
+      // Force-open with active:true to trigger Hyperswarm replication
+      _base.store.get({ key, active: true });
+      activated++;
+      console.log(`[core-fix] Activated writer core: ${hex.slice(0, 12)}...`);
+    }
+    if (activated > 0) _base._queueBump();
+  } catch (_) {}
+}, 10000);
+_base.on('close', () => clearInterval(_coreDiscoveryInterval));
 
 peer._msb = msb;
 peer._mnemexConfig = mnemexConfig;
