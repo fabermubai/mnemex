@@ -76,9 +76,10 @@ export class MemoryIndexer extends Feature {
             this.append = async (key, value) => {
                 // Check if promoted since startup
                 if (_isIndexerNow()) return origAppend(key, value);
-                // Relay via sidechannel
+                // Relay via entry channel (0000mnemex) — always open,
+                // unlike cortex channels which need Protomux pairing time.
                 if (this.peer.sidechannel) {
-                    const ch = this.cortexChannels[0] || 'cortex-crypto';
+                    const ch = this.peer.sidechannel.entryChannel || '0000mnemex';
                     this.peer.sidechannel.broadcast(ch, JSON.stringify({
                         v: 1, type: 'append_relay', key, value,
                         origin: this.peer.wallet?.publicKey || 'unknown',
