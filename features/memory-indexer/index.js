@@ -72,7 +72,9 @@ export class MemoryIndexer extends Feature {
                 // Non-indexer: always relay via sidechannel.
                 // Direct append appears to succeed locally but never
                 // replicates to the indexer (Autobase core replication bug).
-                if (this.peer.sidechannel) {
+                const sc = this.peer.sidechannel;
+                if (sc) {
+                    const ch = this.cortexChannels[0] || 'cortex-crypto';
                     const relayMsg = JSON.stringify({
                         v: 1,
                         type: 'append_relay',
@@ -81,11 +83,10 @@ export class MemoryIndexer extends Feature {
                         origin: this.peer.wallet?.publicKey || 'unknown',
                         ts: Date.now(),
                     });
-                    this.peer.sidechannel.broadcast(
-                        this.cortexChannels[0] || 'cortex-crypto',
-                        relayMsg
-                    );
-                    console.log(`MemoryIndexer: relayed append (${key}) via sidechannel`);
+                    const sent = sc.broadcast(ch, relayMsg);
+                    console.log(`MemoryIndexer: relayed append (${key}) on ${ch} — broadcast=${sent}, connections=${sc.connections?.size ?? '?'}`);
+                } else {
+                    console.log(`MemoryIndexer: relay FAILED — no sidechannel for append (${key})`);
                 }
             };
         }
