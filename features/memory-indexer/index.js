@@ -181,10 +181,10 @@ export class MemoryIndexer extends Feature {
             return true;
         }
 
-        // Append relay: only the bootstrap peer processes relays (fallback
-        // for the brief window before a new peer is promoted to indexer).
+        // Append relay: any indexer processes relays from non-indexer peers.
         if (msg.type === 'append_relay' && msg.key && msg.value) {
-            if (this._isBootstrapPeer && this.peer.base?.writable) {
+            const canProcess = this.peer.base?.writable && (this.peer.base?.isIndexer ?? false);
+            if (canProcess) {
                 this.append(msg.key, msg.value).then(() => {
                     console.log(`MemoryIndexer: executed relayed append (${msg.key}) from ${(msg.origin || '?').slice(0, 12)}...`);
                 }).catch((err) => {
