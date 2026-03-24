@@ -46,6 +46,9 @@ export class MemoryIndexer extends Feature {
         // Presence tracking
         this.presenceMap = new Map(); // peerKey → { address, nick, capabilities, lastSeen, ts }
         this.presenceTTL = 10 * 60 * 1000; // 10 minutes
+
+        // Bootstrap peer flag — only the bootstrap processes append_relay messages
+        this._isBootstrapPeer = options.isBootstrapPeer || false;
     }
 
     /**
@@ -61,30 +64,35 @@ export class MemoryIndexer extends Feature {
             fs.mkdirSync(this.skillsDir, { recursive: true });
         }
 
-        // ── Append relay ──────────────────────────────────────────────
-        // If this peer isn't the Autobase indexer, relay append operations
-        // via sidechannel so an indexer can execute them on our behalf.
-        // If this peer IS the indexer, append directly (default behavior).
+        // ── Append: direct or relay ─────────────────────────────────────
+        // If this peer is an Autobase indexer, append directly.
+        // Otherwise, relay via sidechannel for an indexer to execute.
+        // The check is dynamic — if the peer gets promoted to indexer
+        // mid-session (via addIndexer), it switches to direct append.
         const origAppend = this.append.bind(this);
-        const isIndexer = this.peer.base?.writable && (this.peer.base?.isIndexer ?? false);
-        if (!isIndexer) {
+        const _isIndexerNow = () => this.peer.base?.writable && (this.peer.base?.isIndexer ?? false);
+
+        if (!_isIndexerNow()) {
             this.append = async (key, value) => {
-                // Non-indexer: always relay via sidechannel.
-                // Direct append appears to succeed locally but never
-                // replicates to the indexer (Autobase core replication bug).
+                // Check if promoted since startup
+                if (_isIndexerNow()) return origAppend(key, value);
+                // Relay via sidechannel
                 if (this.peer.sidechannel) {
                     const ch = this.cortexChannels[0] || 'cortex-crypto';
-                    const relayMsg = JSON.stringify({
-                        v: 1,
-                        type: 'append_relay',
-                        key,
-                        value,
+                    this.peer.sidechannel.broadcast(ch, JSON.stringify({
+                        v: 1, type: 'append_relay', key, value,
                         origin: this.peer.wallet?.publicKey || 'unknown',
                         ts: Date.now(),
-                    });
-                    this.peer.sidechannel.broadcast(ch, relayMsg);
+                    }));
                 }
             };
+            // Permanently switch to direct append when promoted
+            if (this.peer.base) {
+                this.peer.base.once('is-indexer', () => {
+                    console.log('MemoryIndexer: promoted to indexer — direct append enabled');
+                    this.append = origAppend;
+                });
+            }
         }
 
         // Try to load registered cortex channels from contract state
@@ -173,10 +181,10 @@ export class MemoryIndexer extends Feature {
             return true;
         }
 
-        // Append relay: indexers execute appends on behalf of non-indexer peers
+        // Append relay: only the bootstrap peer processes relays (fallback
+        // for the brief window before a new peer is promoted to indexer).
         if (msg.type === 'append_relay' && msg.key && msg.value) {
-            const isIdx = this.peer.base?.writable && (this.peer.base?.isIndexer ?? false);
-            if (isIdx) {
+            if (this._isBootstrapPeer && this.peer.base?.writable) {
                 this.append(msg.key, msg.value).then(() => {
                     console.log(`MemoryIndexer: executed relayed append (${msg.key}) from ${(msg.origin || '?').slice(0, 12)}...`);
                 }).catch((err) => {
