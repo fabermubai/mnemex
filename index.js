@@ -887,8 +887,16 @@ if (scBridge) {
           price: message.price || undefined,
           sig: message.sig || undefined,
         };
-        // Broadcast to network FIRST so other Memory Nodes store it
-        sidechannel.broadcast(cortexW, JSON.stringify(writeMsg));
+        // Broadcast to network so other Memory Nodes register the metadata.
+        // For gated memories, strip the data field — only the creator holds
+        // the content. Other nodes learn it exists but can't serve it.
+        const isGated = (writeMsg.access === 'gated');
+        if (isGated) {
+          const { data: _stripped, ...metaOnly } = writeMsg;
+          sidechannel.broadcast(cortexW, JSON.stringify(metaOnly));
+        } else {
+          sidechannel.broadcast(cortexW, JSON.stringify(writeMsg));
+        }
         // Then process locally (store file + register on-chain)
         memoryIndexer._handleMemoryWrite(cortexW, writeMsg)
           .then(() => reply({ type: 'memory_write_ok', memory_id: writeMsg.memory_id }))

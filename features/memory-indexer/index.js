@@ -280,10 +280,14 @@ export class MemoryIndexer extends Feature {
     async _handleMemoryWrite(channel, msg) {
         const { memory_id, cortex, data, author, ts, sig, access } = msg;
 
-        if (!memory_id || !cortex || !data || !author || !ts) {
+        if (!memory_id || !cortex || !author || !ts) {
             console.log('MemoryIndexer: memory_write rejected — missing required fields');
             return;
         }
+
+        // Metadata-only write (gated memory from another peer — no data field).
+        // Register on-chain but don't store any local file.
+        const isMetadataOnly = !data;
 
         // Rate limiting: max N writes per author per time window
         const now = Date.now();
@@ -300,7 +304,7 @@ export class MemoryIndexer extends Feature {
 
         // Check if memory already exists locally — only the original author can update
         const filePath = path.join(this.dataDir, memory_id + '.json');
-        if (fs.existsSync(filePath)) {
+        if (!isMetadataOnly && fs.existsSync(filePath)) {
             const existingRaw = fs.readFileSync(filePath, 'utf8');
             const existing = JSON.parse(existingRaw);
             if (existing.author && existing.author !== author) {
@@ -318,13 +322,14 @@ export class MemoryIndexer extends Feature {
             }
         }
 
-        // Compute content hash from data payload
-        const dataStr = JSON.stringify(data);
-        const contentHash = crypto.createHash('sha256').update(dataStr).digest('hex');
+        // Compute content hash from data payload (or use provided hash for metadata-only)
+        const contentHash = isMetadataOnly
+            ? (msg.content_hash || 'metadata-only')
+            : crypto.createHash('sha256').update(JSON.stringify(data)).digest('hex');
         const stored = {
             memory_id,
             cortex,
-            data,
+            data: data || null,
             author,
             ts,
             sig: sig || null,
@@ -333,8 +338,12 @@ export class MemoryIndexer extends Feature {
             price: (access === 'gated' && msg.price) ? msg.price : null,
             stored_at: Date.now()
         };
-        fs.writeFileSync(filePath, JSON.stringify(stored, null, 2));
-        console.log('MemoryIndexer: stored', memory_id, '→', filePath);
+        if (!isMetadataOnly) {
+            fs.writeFileSync(filePath, JSON.stringify(stored, null, 2));
+            console.log('MemoryIndexer: stored', memory_id, '→', filePath);
+        } else {
+            console.log('MemoryIndexer: metadata-only registration for', memory_id, '(gated — no data stored)');
+        }
 
         // Extract tags from message (array or comma-separated string)
         let tags = '';
