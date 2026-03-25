@@ -956,7 +956,20 @@ if (scBridge) {
           payment_txid_creator: message.payment_txid_creator || undefined,
           payment_txid_node: message.payment_txid_node || undefined,
           payer: message.payer || undefined,
-        }, replyRead).catch((err) => sendError(err?.message ?? String(err)));
+        }, replyRead).then(() => {
+          // If this is a paid read on a non-bootstrap peer, broadcast
+          // fee_record so the bootstrap indexer can register it on-chain.
+          if (!isBootstrap && message.payment_txid_creator && message.payment_txid_node) {
+            sidechannel.broadcast(cortexR, JSON.stringify({
+              v: 1, type: 'fee_record',
+              memory_id: message.memory_id,
+              payment_txid_creator: message.payment_txid_creator,
+              payment_txid_node: message.payment_txid_node,
+              payer: message.payer || peer.wallet?.publicKey || 'unknown',
+              ts: Date.now(),
+            }));
+          }
+        }).catch((err) => sendError(err?.message ?? String(err)));
         return;
       }
 

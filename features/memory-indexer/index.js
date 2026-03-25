@@ -184,6 +184,39 @@ export class MemoryIndexer extends Feature {
             return true;
         }
 
+        // Fee record broadcast: a non-bootstrap peer served a paid read
+        // and broadcasts the fee details so the bootstrap can record on-chain.
+        if (msg.type === 'fee_record' && msg.memory_id && msg.payment_txid_creator) {
+            if (this._isBootstrapPeer) {
+                // Look up memory to compute fee split
+                const memPath = path.join(this.dataDir, msg.memory_id + '.json');
+                const memData = fs.existsSync(memPath) ? JSON.parse(fs.readFileSync(memPath, 'utf8')) : null;
+                if (memData) {
+                    const feeAmount = (memData.access === 'gated' && memData.price) ? memData.price : this.defaultFeeAmount;
+                    const split = this._computeFeeSplit(memData.access, feeAmount);
+                    const feeEntry = {
+                        memory_id: String(msg.memory_id),
+                        operation: 'read_gated',
+                        payer: String(msg.payer || 'unknown'),
+                        payment_txid: String(msg.payment_txid_creator),
+                        payment_txid_creator: String(msg.payment_txid_creator),
+                        payment_txid_node: String(msg.payment_txid_node),
+                        amount: feeAmount,
+                        creator_share: split.creator_share,
+                        node_share: split.node_share,
+                        ts: Date.now()
+                    };
+                    if (this.nodeAddress) feeEntry.served_by = String(this.nodeAddress);
+                    this.append('record_fee', feeEntry).then(() => {
+                        console.log('MemoryIndexer: recorded fee from broadcast for', msg.memory_id);
+                    }).catch((err) => {
+                        console.error('MemoryIndexer: fee_record append failed:', err?.message ?? err);
+                    });
+                }
+            }
+            return true;
+        }
+
         // Channel filter: only process cortex/skills messages below
         const isCortex = this.cortexChannels.includes(channel);
         const isSkills = this.enableSkills && channel === this.skillsChannel;
