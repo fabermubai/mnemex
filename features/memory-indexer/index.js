@@ -73,10 +73,10 @@ export class MemoryIndexer extends Feature {
 
         if (!this._isBootstrapPeer) {
             this.append = async (key, value) => {
-                // Relay via entry channel (0000mnemex) — always open,
-                // unlike cortex channels which need Protomux pairing time.
+                // Relay via first cortex channel — proven to work for
+                // memory_write broadcasts between remote peers.
                 if (this.peer.sidechannel) {
-                    const ch = this.peer.sidechannel.entryChannel || '0000mnemex';
+                    const ch = this.cortexChannels[0] || '0000mnemex';
                     this.peer.sidechannel.broadcast(ch, JSON.stringify({
                         v: 1, type: 'append_relay', key, value,
                         origin: this.peer.wallet?.publicKey || 'unknown',
