@@ -33,6 +33,7 @@ describe('P2P Relay — memory_read relay mechanism', () => {
             dataDir: TEST_DATA_DIR,
             cortexChannels: ['cortex-crypto'],
             relayTimeoutMs: 500, // fast timeout for tests
+            isBootstrapPeer: true,
         });
         indexer.key = 'memory_indexer';
         indexer.append = async (key, value) => { appendCalls.push({ key, value }); };

@@ -71,6 +71,7 @@ describe('Search & List handlers', () => {
             requirePayment: false,
             nodeAddress: 'trac1testnode',
             enableSkills: true,
+            isBootstrapPeer: true,
         });
 
         indexer.key = 'memory_indexer';

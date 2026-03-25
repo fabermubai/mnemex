@@ -41,6 +41,7 @@ describe('Memory Flow — Phase 1 MVP', () => {
         indexer = new MemoryIndexer(mockPeer, {
             dataDir: TEST_DATA_DIR,
             cortexChannels: ['cortex-crypto'],
+            isBootstrapPeer: true,
         });
 
         // Simulate what addFeature does: sets the key used by append()

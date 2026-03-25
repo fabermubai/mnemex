@@ -446,6 +446,7 @@ describe('Phase 2 — Neuronomics Fees & Staking', () => {
                 cortexChannels: ['cortex-crypto'],
                 requirePayment: true,
                 nodeAddress: 'trac1testnode',
+                isBootstrapPeer: true,
             });
 
             indexer.key = 'memory_indexer';
@@ -944,6 +945,7 @@ describe('MemoryIndexer — MSB dual-txid verification', () => {
             msb: mockMsb,
             paymentRetryMs: 0,
             paymentMaxAttempts: 1,
+            isBootstrapPeer: true,
         });
         indexer.key = 'memory_indexer';
         indexer.append = async (key, value) => { appendCalls.push({ key, value }); };
@@ -997,6 +999,7 @@ describe('MemoryIndexer — MSB dual-txid verification', () => {
             msb: mockMsb,
             paymentRetryMs: 0,
             paymentMaxAttempts: 1,
+            isBootstrapPeer: true,
         });
         indexer.key = 'memory_indexer';
         indexer.append = async (key, value) => { appendCalls.push({ key, value }); };
@@ -1039,6 +1042,7 @@ describe('MemoryIndexer — MSB dual-txid verification', () => {
             msb: mockMsb,
             paymentRetryMs: 0,
             paymentMaxAttempts: 1,
+            isBootstrapPeer: true,
         });
         indexer.key = 'memory_indexer';
         indexer.append = async (key, value) => { appendCalls.push({ key, value }); };
@@ -1076,6 +1080,7 @@ describe('MemoryIndexer — MSB dual-txid verification', () => {
             requirePayment: true,
             nodeAddress: 'trac1verifynode',
             msb: null, // no MSB — skip verification
+            isBootstrapPeer: true,
         });
         indexer.key = 'memory_indexer';
         indexer.append = async (key, value) => { appendCalls.push({ key, value }); };

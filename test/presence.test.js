@@ -19,6 +19,7 @@ describe('Presence — peer_announce & getOnlinePeers', () => {
         indexer = new MemoryIndexer(mockPeer, {
             dataDir: TEST_DATA_DIR,
             cortexChannels: ['cortex-crypto'],
+            isBootstrapPeer: true,
         });
         indexer.key = 'memory_indexer';
         indexer.append = async () => {};

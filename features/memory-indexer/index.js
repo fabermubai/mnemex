@@ -65,17 +65,14 @@ export class MemoryIndexer extends Feature {
         }
 
         // ── Append: direct or relay ─────────────────────────────────────
-        // If this peer is an Autobase indexer, append directly.
-        // Otherwise, relay via sidechannel for an indexer to execute.
-        // The check is dynamic — if the peer gets promoted to indexer
-        // mid-session (via addIndexer), it switches to direct append.
+        // Only the bootstrap peer appends directly — its writes are always
+        // processed by the Autobase indexer (itself). All other peers relay
+        // via sidechannel, because Autobase remote core replication is
+        // unreliable (cores opened with active:false are never announced).
         const origAppend = this.append.bind(this);
-        const _isIndexerNow = () => this.peer.base?.writable && (this.peer.base?.isIndexer ?? false);
 
-        if (!_isIndexerNow()) {
+        if (!this._isBootstrapPeer) {
             this.append = async (key, value) => {
-                // Check if promoted since startup
-                if (_isIndexerNow()) return origAppend(key, value);
                 // Relay via entry channel (0000mnemex) — always open,
                 // unlike cortex channels which need Protomux pairing time.
                 if (this.peer.sidechannel) {
@@ -87,13 +84,6 @@ export class MemoryIndexer extends Feature {
                     }));
                 }
             };
-            // Permanently switch to direct append when promoted
-            if (this.peer.base) {
-                this.peer.base.once('is-indexer', () => {
-                    console.log('MemoryIndexer: promoted to indexer — direct append enabled');
-                    this.append = origAppend;
-                });
-            }
         }
 
         // Try to load registered cortex channels from contract state
@@ -182,10 +172,9 @@ export class MemoryIndexer extends Feature {
             return true;
         }
 
-        // Append relay: any indexer processes relays from non-indexer peers.
+        // Append relay: only the bootstrap peer processes relays.
         if (msg.type === 'append_relay' && msg.key && msg.value) {
-            const canProcess = this.peer.base?.writable && (this.peer.base?.isIndexer ?? false);
-            if (canProcess) {
+            if (this._isBootstrapPeer) {
                 this.append(msg.key, msg.value).then(() => {
                     console.log(`MemoryIndexer: executed relayed append (${msg.key}) from ${(msg.origin || '?').slice(0, 12)}...`);
                 }).catch((err) => {

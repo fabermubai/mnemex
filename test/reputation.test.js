@@ -338,6 +338,7 @@ describe('Phase 7 — Rate Limiting', () => {
             cortexChannels: ['cortex-crypto'],
             rateLimitMax: 5,
             rateLimitWindow: 60_000,
+            isBootstrapPeer: true,
         });
         indexer.key = 'memory_indexer';
         indexer.append = async (key, value) => { appendCalls.push({ key, value }); };
@@ -363,6 +364,7 @@ describe('Phase 7 — Rate Limiting', () => {
             cortexChannels: ['cortex-crypto'],
             rateLimitMax: 3,
             rateLimitWindow: 60_000,
+            isBootstrapPeer: true,
         });
         indexer.key = 'memory_indexer';
         indexer.append = async (key, value) => { appendCalls.push({ key, value }); };
@@ -388,6 +390,7 @@ describe('Phase 7 — Rate Limiting', () => {
             cortexChannels: ['cortex-crypto'],
             rateLimitMax: 2,
             rateLimitWindow: 100, // 100ms window for test speed
+            isBootstrapPeer: true,
         });
         indexer.key = 'memory_indexer';
         indexer.append = async (key, value) => { appendCalls.push({ key, value }); };
@@ -424,6 +427,7 @@ describe('Phase 7 — Rate Limiting', () => {
             cortexChannels: ['cortex-crypto'],
             rateLimitMax: 1,
             rateLimitWindow: 60_000,
+            isBootstrapPeer: true,
         });
         indexer.key = 'memory_indexer';
         indexer.append = async (key, value) => { appendCalls.push({ key, value }); };
@@ -490,6 +494,7 @@ describe('Phase 7 — Author Reputation in Responses', () => {
         const indexer = new MemoryIndexer(makeMockPeer(viewState), {
             dataDir: TEST_DATA_DIR,
             cortexChannels: ['cortex-crypto'],
+            isBootstrapPeer: true,
         });
         indexer.key = 'memory_indexer';
         indexer.append = async () => {};
@@ -527,6 +532,7 @@ describe('Phase 7 — Author Reputation in Responses', () => {
         const indexer = new MemoryIndexer(peer, {
             dataDir: TEST_DATA_DIR,
             cortexChannels: ['cortex-crypto'],
+            isBootstrapPeer: true,
         });
         indexer.key = 'memory_indexer';
         indexer.append = async () => {};

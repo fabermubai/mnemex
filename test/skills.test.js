@@ -299,6 +299,7 @@ describe('Phase 3 — Skills & Multi-Cortex', () => {
                 requirePayment: true,
                 nodeAddress: 'trac1testnode',
                 enableSkills: true,
+                isBootstrapPeer: true,
             });
 
             indexer.key = 'memory_indexer';

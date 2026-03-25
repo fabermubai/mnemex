@@ -31,6 +31,7 @@ describe('Bulk sync — memory_sync_request / memory_sync_response', () => {
             dataDir: TEST_DATA_DIR,
             cortexChannels: ['cortex-crypto'],
             relayTimeoutMs: 500,
+            isBootstrapPeer: true,
         });
         indexer.key = 'memory_indexer';
         indexer.append = async (key, value) => {};
