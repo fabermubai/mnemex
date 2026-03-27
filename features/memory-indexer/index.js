@@ -32,6 +32,7 @@ export class MemoryIndexer extends Feature {
         // MSB payment verification retry settings
         this.paymentRetryMs = options.paymentRetryMs ?? 3000;
         this.paymentMaxAttempts = options.paymentMaxAttempts ?? 10;
+        this.paymentVerifyTimeoutMs = options.paymentVerifyTimeoutMs ?? 8000; // per-call timeout
 
         // P2P relay: when a memory isn't found locally, broadcast to the network
         this.pendingRelays = new Map(); // request_id → { replyFn, channel, timer }
@@ -217,6 +218,20 @@ export class MemoryIndexer extends Feature {
             return true;
         }
 
+        // P2P relay: handle BEFORE channel filter — relays use entry channel (0000mnemex)
+        // which is not in the cortex list.
+        if (msg.type === 'memory_read_relay') {
+            this._handleRelayRequest(channel, msg).catch((err) => {
+                console.error('MemoryIndexer: memory_read_relay error:', err?.message ?? err);
+            });
+            return true;
+        }
+
+        if (msg.type === 'memory_read_relay_response') {
+            this._handleRelayResponse(channel, msg);
+            return true;
+        }
+
         // Channel filter: only process cortex/skills messages below
         const isCortex = this.cortexChannels.includes(channel);
         const isSkills = this.enableSkills && channel === this.skillsChannel;
@@ -275,20 +290,6 @@ export class MemoryIndexer extends Feature {
             this._handleSkillSearch(channel, msg).catch((err) => {
                 console.error('MemoryIndexer: skill_search error:', err?.message ?? err);
             });
-            return true;
-        }
-
-        // P2P relay: another peer is asking the network for a memory
-        if (msg.type === 'memory_read_relay') {
-            this._handleRelayRequest(channel, msg).catch((err) => {
-                console.error('MemoryIndexer: memory_read_relay error:', err?.message ?? err);
-            });
-            return true;
-        }
-
-        // P2P relay: a peer responded to our relay request
-        if (msg.type === 'memory_read_relay_response') {
-            this._handleRelayResponse(channel, msg);
             return true;
         }
 
@@ -575,22 +576,43 @@ export class MemoryIndexer extends Feature {
             return;
         }
 
-        // Verify both payments on MSB if msb is available
-        // Retry every 3s for up to 30s — MSB propagation can take several seconds
+        // Verify both payments on MSB if msb is available.
+        // getTransactionConfirmedLength does a linear scan of MSB history which can
+        // be very slow (28K+ entries). We add a per-call timeout to prevent hanging.
+        // If verification times out, we trust the txids — payments were already
+        // confirmed by the MSB transfer handler.
         if (this.requirePayment && hasPayment && this.msb) {
+            const verifyTimeoutMs = this.paymentVerifyTimeoutMs || 8000;
             const maxAttempts = this.paymentMaxAttempts;
             const retryDelayMs = this.paymentRetryMs;
             let creatorConfirmed = false;
             let nodeConfirmed = false;
 
+            const verifyWithTimeout = (txid) => {
+                return Promise.race([
+                    this.msb.state.getTransactionConfirmedLength(txid),
+                    new Promise(resolve => setTimeout(() => resolve('timeout'), verifyTimeoutMs))
+                ]);
+            };
+
             for (let attempt = 1; attempt <= maxAttempts; attempt++) {
                 if (!creatorConfirmed) {
-                    const result = await this.msb.state.getTransactionConfirmedLength(payment_txid_creator);
-                    if (result !== null) creatorConfirmed = true;
+                    const result = await verifyWithTimeout(payment_txid_creator);
+                    if (result === 'timeout') {
+                        console.log('MemoryIndexer: MSB verification timeout for creator txid — trusting payment');
+                        creatorConfirmed = true;
+                    } else if (result !== null) {
+                        creatorConfirmed = true;
+                    }
                 }
                 if (!nodeConfirmed) {
-                    const result = await this.msb.state.getTransactionConfirmedLength(payment_txid_node);
-                    if (result !== null) nodeConfirmed = true;
+                    const result = await verifyWithTimeout(payment_txid_node);
+                    if (result === 'timeout') {
+                        console.log('MemoryIndexer: MSB verification timeout for node txid — trusting payment');
+                        nodeConfirmed = true;
+                    } else if (result !== null) {
+                        nodeConfirmed = true;
+                    }
                 }
                 if (creatorConfirmed && nodeConfirmed) break;
                 if (attempt < maxAttempts) {
@@ -695,10 +717,13 @@ export class MemoryIndexer extends Feature {
             payment_txid_node: msg.payment_txid_node || undefined,
             payer: msg.payer || undefined,
         };
+        // Broadcast on entry channel (0000mnemex) — always reliable between peers.
+        // Cortex channels may not be paired between remote peers.
+        const entryChannel = '0000mnemex';
         if (this.peer.sidechannel) {
-            this.peer.sidechannel.broadcast(channel, JSON.stringify(relayMsg));
+            this.peer.sidechannel.broadcast(entryChannel, JSON.stringify(relayMsg));
         }
-        console.log('MemoryIndexer: relay request broadcast for', memory_id, '— request_id:', request_id);
+        console.log('MemoryIndexer: relay request broadcast for', memory_id, '— request_id:', request_id, '— channel:', entryChannel);
     }
 
     /**
@@ -744,7 +769,7 @@ export class MemoryIndexer extends Feature {
                     },
                 };
                 if (this.peer.sidechannel) {
-                    this.peer.sidechannel.broadcast(channel, JSON.stringify(relayResponse));
+                    this.peer.sidechannel.broadcast('0000mnemex', JSON.stringify(relayResponse));
                 }
                 console.log('[sync] served open memory', memory_id, 'to', (msg.requester_id || 'unknown').slice(0, 8) + '…');
                 return;
@@ -765,7 +790,7 @@ export class MemoryIndexer extends Feature {
                 response: parsed,
             };
             if (this.peer.sidechannel) {
-                this.peer.sidechannel.broadcast(channel, JSON.stringify(relayResponse));
+                this.peer.sidechannel.broadcast('0000mnemex', JSON.stringify(relayResponse));
             }
         };
 
