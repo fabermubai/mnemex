@@ -163,7 +163,7 @@ When setting up a Mnemex node for the first time, ALWAYS follow this exact scrip
 
 **Step 3** — Run this exact command from bash (bypasses launch-node.bat entirely):
 ```bash
-powershell.exe -Command "Start-Process 'cmd.exe' -ArgumentList '/k cd /d <repo_path> && pear run . -- --peer-store-name mnemex-node --msb-store-name mnemex-msb --sc-bridge-token mnemex-dev-token-2026 --sc-bridge-port 49222 --subnet-channel mnemex-v1 --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0 --setup-only'"
+powershell.exe -Command "Start-Process 'cmd.exe' -ArgumentList '/k cd /d <repo_path> && pear run . -- --peer-store-name mnemex-node --msb-store-name mnemex-msb --sc-bridge-token mnemex-dev-token-2026 --sc-bridge-port 49222 --subnet-channel mnemex-v1 --subnet-bootstrap 27e85db0449ed1bc71fd16243b478d44e923bec5c05930f1a5382e37ffe1826b --setup-only'"
 ```
 Note: `/k` keeps the window open. User fills in seed + nick, then closes manually.
 Do NOT use `launch-node.bat` in Step 3 — the nested `start /wait` inside the bat does not work when launched via PowerShell `Start-Process`. `launch-node.bat` works only when double-clicked by a human directly.
@@ -172,7 +172,7 @@ Do NOT use `launch-node.bat` in Step 3 — the nested `start /wait` inside the b
 
 **Step 5** — Launch the background node with this exact command from bash:
 ```bash
-powershell.exe -Command "Start-Process 'cmd.exe' -ArgumentList '/c cd /d <repo_path> && pear run . -- --peer-store-name mnemex-node --msb-store-name mnemex-msb --sc-bridge 1 --sc-bridge-port 49222 --sc-bridge-token mnemex-dev-token-2026 --sc-bridge-cli 1 --require-payment 1 --subnet-channel mnemex-v1 --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0 --cortex-channels cortex-crypto,cortex-dev,cortex-general,cortex-trac --enable-skills 1' -WindowStyle Hidden"
+powershell.exe -Command "Start-Process 'cmd.exe' -ArgumentList '/c cd /d <repo_path> && pear run . -- --peer-store-name mnemex-node --msb-store-name mnemex-msb --sc-bridge 1 --sc-bridge-port 49222 --sc-bridge-token mnemex-dev-token-2026 --sc-bridge-cli 1 --require-payment 1 --subnet-channel mnemex-v1 --subnet-bootstrap 27e85db0449ed1bc71fd16243b478d44e923bec5c05930f1a5382e37ffe1826b --cortex-channels cortex-crypto,cortex-dev,cortex-general,cortex-trac --enable-skills 1' -WindowStyle Hidden"
 ```
 This starts the node as a hidden background process that persists after the console closes.
 
