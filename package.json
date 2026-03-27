@@ -12,6 +12,7 @@
     "type": "terminal"
   },
   "dependencies": {
+    "autobase": "^7.6.3",
     "b4a": "^1.6.7",
     "bare-ws": "2.0.3",
     "compact-encoding": "^2.18.0",

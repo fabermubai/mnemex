@@ -292,15 +292,17 @@ if (sidechannelWelcomeRequired && !sidechannelOwnerMap.has(sidechannelEntry)) {
   );
 }
 
-// Admin peer's Autobase key — all Mnemex peers must join this Autobase.
+// Autobase key — all Mnemex peers must join the same Autobase.
 // Override with --subnet-bootstrap <hex> or SUBNET_BOOTSTRAP env var.
+// Use --subnet-bootstrap auto to create a NEW network (first peer becomes bootstrap).
 const MNEMEX_SUBNET_BOOTSTRAP =
-  'f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0';
+  '27e85db0449ed1bc71fd16243b478d44e923bec5c05930f1a5382e37ffe1826b';
 
-const subnetBootstrapHex =
+const rawSubnetBootstrap =
   (flags['subnet-bootstrap'] && String(flags['subnet-bootstrap'])) ||
   env.SUBNET_BOOTSTRAP ||
   MNEMEX_SUBNET_BOOTSTRAP;
+const subnetBootstrapHex = rawSubnetBootstrap === 'auto' ? null : rawSubnetBootstrap;
 
 const scBridgeEnabledRaw =
   (flags['sc-bridge'] && String(flags['sc-bridge'])) ||
@@ -530,6 +532,7 @@ const peer = new Peer({
   contract: MnemexContract,
 });
 await peer.ready();
+
 
 /* ── Auto-add writers (early) ────────────────────────────────────────────
  * Must run BEFORE any other setup so the flag is in Autobase state when
