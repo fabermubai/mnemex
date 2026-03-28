@@ -423,9 +423,12 @@ export class MemoryIndexer extends Feature {
     async _getAuthorReputation(author) {
         const view = this.peer.base?.view;
         if (!view) return null;
-        const reads = (await view.get('rep/' + author + '/reads')) || 0;
-        const slashes = (await view.get('rep/' + author + '/slashes')) || 0;
-        const followers = (await view.get('follower_count/' + author)) || 0;
+        const readsEntry = await view.get('rep/' + author + '/reads');
+        const slashesEntry = await view.get('rep/' + author + '/slashes');
+        const followersEntry = await view.get('follower_count/' + author);
+        const reads = readsEntry?.value ?? 0;
+        const slashes = slashesEntry?.value ?? 0;
+        const followers = followersEntry?.value ?? 0;
         return {
             reads,
             slashes,
@@ -486,9 +489,11 @@ export class MemoryIndexer extends Feature {
 
         // Memory not found locally
         if (!fs.existsSync(filePath)) {
+            console.log('MemoryIndexer: file not found for', memory_id, '— replyFn:', !!replyFn, '— is_relay:', !!msg.is_relay);
             // If this is a local/SC-Bridge request (has replyFn) and NOT already a relay,
             // broadcast to the P2P network instead of returning found:false immediately.
             if (replyFn && !msg.is_relay) {
+                console.log('MemoryIndexer: initiating relay for', memory_id);
                 this._initiateRelay(channel, msg, replyFn);
                 return;
             }

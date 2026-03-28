@@ -465,7 +465,7 @@ describe('Phase 7 — Author Reputation in Responses', () => {
             isIndexer: true,
             append: async () => {},
             view: {
-                get: async (key) => viewState[key] !== undefined ? viewState[key] : null,
+                get: async (key) => viewState[key] !== undefined ? { value: viewState[key] } : null,
             },
         },
         protocol: { instance: { generateNonce: () => 'nonce-' + Date.now() } },
