@@ -61,7 +61,7 @@ launch-node.bat
 # First launch (interactive — seed + nick prompt):
 pear run . -- --peer-store-name mnemex-node --msb-store-name mnemex-msb \
   --subnet-channel mnemex-v1 \
-  --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0 \
+  --subnet-bootstrap d28811d692b0538024c0146a80ac7d283945667199b838530918d15b7f543f08 \
   --sc-bridge 1 --sc-bridge-port 49222 --sc-bridge-token <your-secret-token> \
   --require-payment 1 --cortex-channels "cortex-crypto,cortex-dev,cortex-general,cortex-trac" \
   --enable-skills 1 --sc-bridge-cli 1 --setup-only
@@ -69,7 +69,7 @@ pear run . -- --peer-store-name mnemex-node --msb-store-name mnemex-msb \
 # Subsequent launches (background):
 pear run . -- --peer-store-name mnemex-node --msb-store-name mnemex-msb \
   --subnet-channel mnemex-v1 \
-  --subnet-bootstrap f52062456f3826bad7846a0cf65f47a32e84d545d28eb907e90fa021bb50efb0 \
+  --subnet-bootstrap d28811d692b0538024c0146a80ac7d283945667199b838530918d15b7f543f08 \
   --sc-bridge 1 --sc-bridge-port 49222 --sc-bridge-token <your-secret-token> \
   --require-payment 1 --cortex-channels "cortex-crypto,cortex-dev,cortex-general,cortex-trac" \
   --enable-skills 1 --sc-bridge-cli 1 > mnemex.log 2>&1 &
@@ -311,7 +311,7 @@ Not found:
 }
 ```
 
-**Fee:** 0.03 $TNK Mnemex fee + 0.06 $TNK network fees (2 transfers) = **0.09 $TNK total** for open memories. Split depends on access type — see fee schedule below.
+**Fee:** Open memories are **free** — no fee, no payment. Gated memories require payment — see fee schedule below.
 
 ---
 
@@ -540,14 +540,14 @@ The `txHash` field (camelCase) contains the 64-character hex transaction hash to
 
 Each paid operation requires 2 direct MSB transfers (agent → creator + agent → node). Each transfer costs 0.03 $TNK in network fees.
 
-| Operation | Mnemex Fee | Creator (%) | Creator (amount) | Node (%) | Node (amount) | Network Fees (2 TX) | Total Agent Cost |
-|---|---|---|---|---|---|---|---|
-| Open memory read | 0.03 $TNK | 60% | 0.018 $TNK | 40% | 0.012 $TNK | 0.06 $TNK | **0.09 $TNK** |
-| Gated memory read | set by creator | 70% | 70% of price | 30% | 30% of price | 0.06 $TNK | price + 0.06 $TNK |
-| Skill download | set by creator | 80% | 80% of price | 20% | 20% of price | 0.06 $TNK | price + 0.06 $TNK |
-| Memory write | Free | — | — | — | — | 0 | **Free** |
-| Skill publish | Free | — | — | — | — | 0 | **Free** |
-| Skill catalog | Free | — | — | — | — | 0 | **Free** |
+| Operation | Mnemex Fee | Creator (%) | Relay Node (%) | Network Fees (2 TX) | Total Agent Cost |
+|---|---|---|---|---|---|
+| Open memory read | **Free** | — | — | — | **Free** |
+| Gated memory read | set by creator | 70% | 30% | 0.06 $TNK | price + 0.06 $TNK |
+| Skill download | set by creator | 80% | 20% | 0.06 $TNK | price + 0.06 $TNK |
+| Memory write | Free | — | — | — | **Free** |
+| Skill publish | Free | — | — | — | **Free** |
+| Skill catalog | Free | — | — | — | **Free** |
 
 All amounts in 18-decimal bigint strings: 0.03 $TNK = `"30000000000000000"`.
 
@@ -621,7 +621,6 @@ Edit this file manually to change your nick, or use `/my_nick <name>` (restart n
 |---------|-------------|
 | `/register_memory --memory_id ... --cortex ... --content_hash ... --access ... [--price <TNK>]` | Register memory on-chain (use `--price` for gated custom price) |
 | `/record_fee --memory_id ... --operation ... --payer ... --payment_txid ... --amount ...` | Record a fee payment |
-| `/register_stake --memory_id ... --stake_txid ... --stake_amount ...` | Stake $TNK on a memory |
 | `/register_skill --skill_id ... --name ... --cortex ... --price ... --version ...` | Register skill on-chain |
 | `/register_cortex --name ... --description ...` | Create new cortex (admin only) |
 
@@ -644,20 +643,17 @@ async def write_memory():
         await ws.recv()  # auth_ok
 
         await ws.send(json.dumps({
-            "type": "send",
-            "channel": "cortex-crypto",
-            "message": json.dumps({
-                "v": 1,
-                "type": "memory_write",
-                "memory_id": "btc-price-2026-02-27",
-                "cortex": "cortex-crypto",
-                "data": {"key": "BTC/USD", "value": 97250, "source": "my-agent"},
-                "author": "your-pubkey-hex-64-chars",
-                "ts": 1772150400000,
-                "access": "open",
-                "tags": "bitcoin,price"
-            })
+            "type": "memory_write",
+            "memory_id": "btc-price-2026-02-27",
+            "cortex": "cortex-crypto",
+            "data": {"key": "BTC/USD", "value": 97250, "source": "my-agent"},
+            "author": "your-pubkey-hex-64-chars",
+            "ts": 1772150400000,
+            "access": "open",
+            "tags": "bitcoin,price"
         }))
+        response = await ws.recv()
+        print(response)  # memory_write_ok
 
 asyncio.run(write_memory())
 ```
@@ -685,28 +681,15 @@ ws.on('message', (d) => {
         ws.send(JSON.stringify({ type: 'auth', token: 'mytoken' }));
     }
     if (msg.type === 'auth_ok') {
-        ws.send(JSON.stringify({ type: 'subscribe', channels: ['cortex-crypto'] }));
         ws.send(JSON.stringify({
-            type: 'send',
-            channel: 'cortex-crypto',
-            message: JSON.stringify({
-                v: 1,
-                type: 'memory_read',
-                memory_id: 'btc-price-2026-02-27'
-            })
+            type: 'memory_read',
+            memory_id: 'btc-price-2026-02-27',
+            channel: 'cortex-crypto'
         }));
     }
-    if (msg.type === 'sidechannel_message') {
-        const inner = JSON.parse(msg.message);
-        if (inner.type === 'memory_response') {
-            console.log('Memory:', inner.data);
-            ws.close();
-        }
-        if (inner.type === 'payment_required') {
-            console.log('Pay', inner.creator_share, 'to creator:', inner.pay_to_creator);
-            console.log('Pay', inner.node_share, 'to node:', inner.pay_to_node);
-            ws.close();
-        }
+    if (msg.type === 'memory_response') {
+        console.log('Data:', msg.data);
+        ws.close();
     }
 });
 ```
