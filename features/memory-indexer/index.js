@@ -36,7 +36,7 @@ export class MemoryIndexer extends Feature {
 
         // P2P relay: when a memory isn't found locally, broadcast to the network
         this.pendingRelays = new Map(); // request_id → { replyFn, channel, timer }
-        this.relayTimeoutMs = options.relayTimeoutMs || 10_000; // 10 seconds
+        this.relayTimeoutMs = options.relayTimeoutMs || 30_000; // 30s — MSB verification can take 16s+
         this.peerId = peer.wallet?.publicKey || null;
 
         // Rate limiting: max writes per author per time window
