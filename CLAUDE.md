@@ -163,7 +163,7 @@ When setting up a Mnemex node for the first time, ALWAYS follow this exact scrip
 
 **Step 3** — Run this exact command from bash (bypasses launch-node.bat entirely):
 ```bash
-powershell.exe -Command "Start-Process 'cmd.exe' -ArgumentList '/k cd /d <repo_path> && pear run . -- --peer-store-name mnemex-node --msb-store-name mnemex-msb --sc-bridge-token mnemex-dev-token-2026 --sc-bridge-port 49222 --subnet-channel mnemex-v1 --subnet-bootstrap 27e85db0449ed1bc71fd16243b478d44e923bec5c05930f1a5382e37ffe1826b --setup-only'"
+powershell.exe -Command "Start-Process 'cmd.exe' -ArgumentList '/k cd /d <repo_path> && pear run . -- --peer-store-name mnemex-node --msb-store-name mnemex-msb --sc-bridge-token mnemex-dev-token-2026 --sc-bridge-port 49222 --subnet-channel mnemex-v1 --subnet-bootstrap d28811d692b0538024c0146a80ac7d283945667199b838530918d15b7f543f08 --setup-only'"
 ```
 Note: `/k` keeps the window open. User fills in seed + nick, then closes manually.
 Do NOT use `launch-node.bat` in Step 3 — the nested `start /wait` inside the bat does not work when launched via PowerShell `Start-Process`. `launch-node.bat` works only when double-clicked by a human directly.
@@ -172,7 +172,7 @@ Do NOT use `launch-node.bat` in Step 3 — the nested `start /wait` inside the b
 
 **Step 5** — Launch the background node with this exact command from bash:
 ```bash
-powershell.exe -Command "Start-Process 'cmd.exe' -ArgumentList '/c cd /d <repo_path> && pear run . -- --peer-store-name mnemex-node --msb-store-name mnemex-msb --sc-bridge 1 --sc-bridge-port 49222 --sc-bridge-token mnemex-dev-token-2026 --sc-bridge-cli 1 --require-payment 1 --subnet-channel mnemex-v1 --subnet-bootstrap 27e85db0449ed1bc71fd16243b478d44e923bec5c05930f1a5382e37ffe1826b --cortex-channels cortex-crypto,cortex-dev,cortex-general,cortex-trac --enable-skills 1' -WindowStyle Hidden"
+powershell.exe -Command "Start-Process 'cmd.exe' -ArgumentList '/c cd /d <repo_path> && pear run . -- --peer-store-name mnemex-node --msb-store-name mnemex-msb --sc-bridge 1 --sc-bridge-port 49222 --sc-bridge-token mnemex-dev-token-2026 --sc-bridge-cli 1 --require-payment 1 --subnet-channel mnemex-v1 --subnet-bootstrap d28811d692b0538024c0146a80ac7d283945667199b838530918d15b7f543f08 --cortex-channels cortex-crypto,cortex-dev,cortex-general,cortex-trac --enable-skills 1' -WindowStyle Hidden"
 ```
 This starts the node as a hidden background process that persists after the console closes.
 
@@ -288,11 +288,11 @@ Create a `test/memory-flow.test.js`:
 
 **Fee structure:**
 
-| Operation | Mnemex Fee | Creator | Node | Network Fees (2 TX) | Total Agent Cost |
+| Operation | Mnemex Fee | Creator | Relay Node | Network Fees | Total Agent Cost |
 |---|---|---|---|---|---|
-| Open Memory Read | 0.03 $TNK | 60% (0.018) | 40% (0.012) | 0.06 $TNK | **0.09 $TNK** |
-| Gated Memory Read | creator sets price | 70% | 30% | 0.06 $TNK | price + 0.06 $TNK |
-| Skill Download | creator sets price | 80% | 20% | 0.06 $TNK | price + 0.06 $TNK |
+| Open Memory Read | **Free** | — | — | — | **Free** |
+| Gated Memory Read | creator sets price | 70% | 30% | 0.06 $TNK (2 TX) | price + 0.06 $TNK |
+| Skill Download | creator sets price | 80% | 20% | 0.06 $TNK (2 TX) | price + 0.06 $TNK |
 
 - All amounts in smallest unit: 1 $TNK = 1_000_000_000_000_000_000 (18 decimals)
 - 0.03 $TNK = "30000000000000000" in bigint string
@@ -309,9 +309,9 @@ Add fee tracking functions to MnemexContract:
   - Validation: payment_txid must not already be recorded (prevent double-counting)
   - Look up the memory's author from state
   - Calculate split based on operation type:
-    - `read_open`: 60% creator, 40% node pool
-    - `read_gated`: 70% creator, 30% node pool
-    - `skill_download`: 80% creator, 20% node pool
+    - `read_gated`: 70% creator, 30% relay node
+    - `skill_download`: 80% creator, 20% relay node
+    - Note: open memory reads are free — no `record_fee` needed
   - Storage: `put('fee/' + payment_txid, { memory_id, operation, payer, amount, creator_share, node_share, ts })`
   - Storage: update `put('balance/' + author, accumulated_creator_balance)` — add creator_share
   - Storage: update `put('balance_nodes', accumulated_node_balance)` — add node_share
