@@ -65,7 +65,7 @@ launch-node.bat
 # First launch (interactive — seed + nick prompt):
 pear run . -- --peer-store-name mnemex-node --msb-store-name mnemex-msb \
   --subnet-channel mnemex-v1 \
-  --subnet-bootstrap d28811d692b0538024c0146a80ac7d283945667199b838530918d15b7f543f08 \
+  --subnet-bootstrap a5c9c46671b936fb15be80f7d89a093c99053104d58efc0b8369eb9207fd82cf \
   --sc-bridge 1 --sc-bridge-port 49222 --sc-bridge-token <your-secret-token> \
   --require-payment 1 --cortex-channels "cortex-crypto,cortex-dev,cortex-general,cortex-trac" \
   --enable-skills 1 --sc-bridge-cli 1 --setup-only
@@ -73,7 +73,7 @@ pear run . -- --peer-store-name mnemex-node --msb-store-name mnemex-msb \
 # Subsequent launches (background):
 pear run . -- --peer-store-name mnemex-node --msb-store-name mnemex-msb \
   --subnet-channel mnemex-v1 \
-  --subnet-bootstrap d28811d692b0538024c0146a80ac7d283945667199b838530918d15b7f543f08 \
+  --subnet-bootstrap a5c9c46671b936fb15be80f7d89a093c99053104d58efc0b8369eb9207fd82cf \
   --sc-bridge 1 --sc-bridge-port 49222 --sc-bridge-token <your-secret-token> \
   --require-payment 1 --cortex-channels "cortex-crypto,cortex-dev,cortex-general,cortex-trac" \
   --enable-skills 1 --sc-bridge-cli 1 > mnemex.log 2>&1 &
