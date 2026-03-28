@@ -566,11 +566,11 @@ if (isBootstrap) {
 }
 
 /* ── Auto-promote writers to indexers ────────────────────────────────────
- * Every node should be an indexer so the network survives any node going
- * offline. The bootstrap peer periodically checks for writers that aren't
- * yet indexers and promotes them via addIndexer.
+ * DISABLED: multi-indexer causes INVALID_SIGNATURE errors in Autobase.
+ * Until we understand how to run multiple indexers correctly, only the
+ * bootstrap peer should be an indexer. Writers can still append via relay.
  * ──────────────────────────────────────────────────────────────────────── */
-if (isBootstrap) {
+if (false && isBootstrap) {
   const _promotedKeys = new Set();
   const _promoteWritersToIndexers = async () => {
     try {
