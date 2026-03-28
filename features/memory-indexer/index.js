@@ -1174,6 +1174,9 @@ export class MemoryIndexer extends Feature {
         const limit = Number.isInteger(msg.limit) && msg.limit > 0 ? Math.min(msg.limit, 100) : 20;
 
         const memories = [];
+        const seenIds = new Set();
+
+        // 1. Scan local data files (open memories + gated we own)
         if (fs.existsSync(this.dataDir)) {
             const files = fs.readdirSync(this.dataDir).filter(f => f.endsWith('.json'));
             for (const file of files) {
@@ -1193,7 +1196,46 @@ export class MemoryIndexer extends Feature {
                     access: stored.access || 'open',
                     ts: stored.ts || null
                 });
+                seenIds.add(stored.memory_id);
                 if (memories.length >= limit) break;
+            }
+        }
+
+        // 2. Scan contract state for memories without local files (e.g. remote gated)
+        if (memories.length < limit && this.peer.base?.view) {
+            try {
+                const prefix = cortexFilter ? 'mem_by_cortex/' + cortexFilter + '/' : 'mem/';
+                const stream = this.peer.base.view.createReadStream({ gte: prefix, lt: prefix + '\xff' });
+                for await (const entry of stream) {
+                    if (memories.length >= limit) break;
+                    const key = typeof entry.key === 'string' ? entry.key : entry.key.toString('utf8');
+                    // Extract memory_id from key
+                    const memId = cortexFilter
+                        ? key.slice(('mem_by_cortex/' + cortexFilter + '/').length)
+                        : key.slice('mem/'.length);
+                    if (seenIds.has(memId)) continue;
+
+                    // Look up full metadata
+                    const metaEntry = cortexFilter
+                        ? await this.peer.base.view.get('mem/' + memId)
+                        : entry;
+                    if (!metaEntry?.value) continue;
+                    const meta = metaEntry.value;
+
+                    if (authorFilter && meta.author !== authorFilter) continue;
+                    if (cortexFilter && meta.cortex !== cortexFilter) continue;
+
+                    memories.push({
+                        memory_id: memId,
+                        cortex: meta.cortex,
+                        author: meta.author,
+                        access: meta.access || 'open',
+                        ts: meta.ts || null
+                    });
+                    seenIds.add(memId);
+                }
+            } catch (_e) {
+                // Contract state may not be ready
             }
         }
 
