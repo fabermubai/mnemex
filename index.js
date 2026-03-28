@@ -296,7 +296,7 @@ if (sidechannelWelcomeRequired && !sidechannelOwnerMap.has(sidechannelEntry)) {
 // Override with --subnet-bootstrap <hex> or SUBNET_BOOTSTRAP env var.
 // Use --subnet-bootstrap auto to create a NEW network (first peer becomes bootstrap).
 const MNEMEX_SUBNET_BOOTSTRAP =
-  '27e85db0449ed1bc71fd16243b478d44e923bec5c05930f1a5382e37ffe1826b';
+  'd28811d692b0538024c0146a80ac7d283945667199b838530918d15b7f543f08';
 
 const rawSubnetBootstrap =
   (flags['subnet-bootstrap'] && String(flags['subnet-bootstrap'])) ||
