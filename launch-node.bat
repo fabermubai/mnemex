@@ -1,7 +1,7 @@
 @echo off
 cd /d "%~dp0"
 
-set PEER_STORE=mnemex-admin
+set PEER_STORE=mnemex-node
 set MSB_STORE=mnemex-msb
 set FLAGS=--peer-store-name %PEER_STORE% --msb-store-name %MSB_STORE% --subnet-channel mnemex-v1 --subnet-bootstrap d28811d692b0538024c0146a80ac7d283945667199b838530918d15b7f543f08 --sc-bridge 1 --sc-bridge-port 49222 --sc-bridge-token mnemex-dev-token-2026 --require-payment 1 --cortex-channels cortex-crypto,cortex-dev,cortex-general,cortex-trac --enable-skills 1 --sc-bridge-cli 1
 

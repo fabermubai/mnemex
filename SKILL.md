@@ -28,7 +28,11 @@ Before cloning, verify these system requirements. If any is missing, install it 
 node -v && npm -v && pear -v
 ```
 
-> **First launch — human interaction required.** The first launch triggers an interactive wallet prompt (seed phrase + nick). `launch-node.bat` handles this automatically: it detects the missing keypair, runs `pear run . -- --setup-only` (interactive), then starts the node in background. **Subsequent launches skip the prompt entirely** and start in background. After first launch, no terminal is needed — interact via SC-Bridge WebSocket.
+> **Pear warning on first install:** You may see "To complete Pear installation, prepend to PATH..." — this is normal and resolves itself on the first `pear run` command. No action needed.
+
+> **First launch — human interaction required.** The first launch triggers an interactive wallet prompt (seed phrase + nick). `launch-node.bat` handles this automatically: it detects the missing keypair, runs `pear run . -- --setup-only` (interactive), then starts the node in background. **First launch may take 1-2 minutes** while Pear downloads its runtime. **Subsequent launches** start in background in ~20 seconds. After first launch, no terminal is needed — interact via SC-Bridge WebSocket.
+
+> **Writer/Indexer promotion:** After connecting to the network, the bootstrap peer automatically promotes new writers to indexers. This takes up to ~60 seconds. Verify with `/stats` — check `isWriter` and `isIndexer`.
 
 ## Quick Start
 
