@@ -1081,7 +1081,7 @@ export class MemoryIndexer extends Feature {
      */
     async _handleMemorySearch(channel, msg, replyFn) {
         const query = typeof msg.query === 'string' ? msg.query.trim().toLowerCase() : '';
-        const cortexFilter = msg.cortex || null;
+        const cortexFilter = msg.cortex || msg.channel || null;
         const authorFilter = msg.author || null;
         const limit = Number.isInteger(msg.limit) && msg.limit > 0 ? Math.min(msg.limit, 50) : 20;
 
@@ -1169,7 +1169,7 @@ export class MemoryIndexer extends Feature {
      * @param replyFn — optional callback(dataStr) for direct reply (SC-Bridge)
      */
     async _handleMemoryList(channel, msg, replyFn) {
-        const cortexFilter = msg.cortex || null;
+        const cortexFilter = msg.cortex || msg.channel || null;
         const authorFilter = msg.author || null;
         const limit = Number.isInteger(msg.limit) && msg.limit > 0 ? Math.min(msg.limit, 100) : 20;
 
