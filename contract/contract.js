@@ -356,7 +356,7 @@ class MnemexContract extends Contract {
 
             if (_this.op.key === 'register_skill') {
                 const val = _this.op.value;
-                if (!val || !val.skill_id || !val.name || !val.description || !val.cortex || !val.inputs || !val.outputs || !val.content_hash || !val.price || !val.version || !val.author) return;
+                if (!val || !val.skill_id || !val.name || !val.description || !val.cortex || !val.content_hash || !val.price || !val.version || !val.author) return;
 
                 const skillId = val.skill_id;
                 const existing = await _this.get('skill/' + skillId);

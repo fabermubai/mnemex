@@ -1023,8 +1023,8 @@ export class MemoryIndexer extends Feature {
      * @param channel
      * @param msg
      */
-    async _handleSkillCatalog(channel, msg) {
-        const cortexFilter = msg.cortex || null;
+    async _handleSkillCatalog(channel, msg, replyFn) {
+        const cortexFilter = msg.cortex || msg.channel || null;
         const skills = [];
         const baseView = this.peer?.base?.view || null;
 
@@ -1063,10 +1063,8 @@ export class MemoryIndexer extends Feature {
             ts: Date.now()
         };
 
-        if (this.peer.sidechannel) {
-            this.peer.sidechannel.broadcast(channel, JSON.stringify(response));
-            console.log('MemoryIndexer: skill_catalog response —', skills.length, 'skills');
-        }
+        this._respond(channel, response, replyFn);
+        console.log('MemoryIndexer: skill_catalog response —', skills.length, 'skills');
     }
     // ==================== Search & List Handlers ====================
 
