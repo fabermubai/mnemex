@@ -872,13 +872,59 @@ if (scBridge) {
         return;
       }
 
+      /* ── skill_publish ─────────────────────────────────────────────── */
+      case 'skill_publish': {
+        const skillMsg = {
+          v: 1, type: 'skill_publish',
+          skill_id: message.skill_id,
+          name: message.name,
+          description: message.description,
+          cortex: message.cortex || 'cortex-general',
+          price: message.price || '0',
+          version: message.version || '1.0.0',
+          package: message.package,
+          author: peer.wallet.publicKey,
+          ts: Date.now(),
+        };
+        // Broadcast to skills channel
+        sidechannel.broadcast(memoryIndexer.skillsChannel, JSON.stringify(skillMsg));
+        // Process locally
+        memoryIndexer._handleSkillPublish(memoryIndexer.skillsChannel, skillMsg)
+          .then(() => reply({ type: 'skill_publish_ok', skill_id: skillMsg.skill_id }))
+          .catch((err) => sendError(err?.message ?? String(err)));
+        return;
+      }
+
+      /* ── skill_request ──────────────────────────────────────────────── */
+      case 'skill_request': {
+        const replySkillReq = (data) => reply(JSON.parse(data));
+        memoryIndexer._handleSkillRequest(memoryIndexer.skillsChannel, {
+          v: 1, type: 'skill_request',
+          skill_id: message.skill_id,
+          payment_txid_creator: message.payment_txid_creator || undefined,
+          payment_txid_node: message.payment_txid_node || undefined,
+          payer: message.payer || undefined,
+        }, replySkillReq).catch((err) => sendError(err?.message ?? String(err)));
+        return;
+      }
+
+      /* ── skill_catalog ──────────────────────────────────────────────── */
+      case 'skill_catalog': {
+        const replySkillCat = (data) => reply(JSON.parse(data));
+        memoryIndexer._handleSkillCatalog(memoryIndexer.skillsChannel, {
+          v: 1, type: 'skill_catalog',
+          cortex: message.cortex || null,
+        }, replySkillCat).catch((err) => sendError(err?.message ?? String(err)));
+        return;
+      }
+
       /* ── skill_search ────────────────────────────────────────────────── */
       case 'skill_search': {
         const replySkill = (data) => reply(JSON.parse(data));
         memoryIndexer._handleSkillSearch(memoryIndexer.skillsChannel, {
           v: 1, type: 'skill_search',
           query: message.query || '',
-          cortex: message.cortex || null,
+          cortex: message.cortex || message.channel || null,
           limit: message.limit
         }, replySkill).catch((err) => sendError(err?.message ?? String(err)));
         return;
