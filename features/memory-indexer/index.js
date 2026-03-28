@@ -927,7 +927,7 @@ export class MemoryIndexer extends Feature {
      * @param channel
      * @param msg
      */
-    async _handleSkillRequest(channel, msg) {
+    async _handleSkillRequest(channel, msg, replyFn) {
         const { skill_id, payment_txid_creator, payment_txid_node } = msg;
         const hasPayment = !!(payment_txid_creator && payment_txid_node);
 
@@ -948,10 +948,8 @@ export class MemoryIndexer extends Feature {
                 package: null,
                 ts: Date.now()
             };
-            if (this.peer.sidechannel) {
-                this.peer.sidechannel.broadcast(channel, JSON.stringify(response));
-                console.log('MemoryIndexer: skill_request for', skill_id, '— not found');
-            }
+            this._respond(channel, response, replyFn);
+            console.log('MemoryIndexer: skill_request for', skill_id, '— not found');
             return;
         }
 
@@ -978,10 +976,8 @@ export class MemoryIndexer extends Feature {
                 pay_to_node: this.nodeAddress,
                 ts: Date.now()
             };
-            if (this.peer.sidechannel) {
-                this.peer.sidechannel.broadcast(channel, JSON.stringify(response));
-                console.log('MemoryIndexer: payment_required for skill', skill_id);
-            }
+            this._respond(channel, response, replyFn);
+            console.log('MemoryIndexer: payment_required for skill', skill_id);
             return;
         }
 
@@ -995,10 +991,8 @@ export class MemoryIndexer extends Feature {
             ts: Date.now()
         };
 
-        if (this.peer.sidechannel) {
-            this.peer.sidechannel.broadcast(channel, JSON.stringify(response));
-            console.log('MemoryIndexer: skill_deliver for', skill_id);
-        }
+        this._respond(channel, response, replyFn);
+        console.log('MemoryIndexer: skill_deliver for', skill_id);
 
         // Record skill download in contract if payment was provided
         if (hasPayment) {
