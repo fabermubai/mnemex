@@ -908,7 +908,26 @@ if (scBridge) {
 
       /* ── skill_request ──────────────────────────────────────────────── */
       case 'skill_request': {
-        const replySkillReq = (data) => reply(JSON.parse(data));
+        const replySkillReq = (data) => {
+          const parsed = JSON.parse(data);
+          // Auto-save purchased skill locally
+          if (parsed.type === 'skill_deliver' && parsed.found && parsed.package) {
+            try {
+              const skillsDir = path.join(memoryIndexer.dataDir, 'skills');
+              if (!fs.existsSync(skillsDir)) fs.mkdirSync(skillsDir, { recursive: true });
+              const filePath = path.join(skillsDir, parsed.skill_id + '.json');
+              if (!fs.existsSync(filePath)) {
+                fs.writeFileSync(filePath, JSON.stringify({
+                  skill_id: parsed.skill_id,
+                  package: parsed.package,
+                  purchased_at: Date.now(),
+                }, null, 2));
+                console.log('Skill auto-saved:', parsed.skill_id);
+              }
+            } catch (_e) { /* ignore save errors */ }
+          }
+          reply(parsed);
+        };
         memoryIndexer._handleSkillRequest(memoryIndexer.skillsChannel, {
           v: 1, type: 'skill_request',
           skill_id: message.skill_id,
