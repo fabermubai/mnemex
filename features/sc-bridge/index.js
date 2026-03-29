@@ -580,6 +580,17 @@ class ScBridge extends Feature {
     this.started = false;
     this.clients.clear();
   }
+
+  /**
+   * Broadcast a raw JSON string to all authenticated clients.
+   */
+  broadcastToClients(dataStr) {
+    for (const client of this.clients) {
+      if (client.authed) {
+        try { this._broadcastToClient(client, JSON.parse(dataStr)); } catch (_e) { /* ignore */ }
+      }
+    }
+  }
 }
 
 export default ScBridge;

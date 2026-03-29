@@ -717,6 +717,15 @@ if (scBridgeEnabled) {
   });
 }
 
+// Wire MemoryIndexer events to SC-Bridge — broadcast to all connected clients
+if (scBridge) {
+  memoryIndexer.onEvent((event) => {
+    try {
+      scBridge.broadcastToClients(JSON.stringify(event));
+    } catch (_e) { /* ignore if no clients connected */ }
+  });
+}
+
 const skillsChannels = enableSkills ? ['mnemex-skills'] : [];
 const allChannels = [...new Set([sidechannelEntry, ...sidechannelExtras, ...cortexChannels, ...skillsChannels])];
 

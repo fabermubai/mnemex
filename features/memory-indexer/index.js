@@ -48,8 +48,29 @@ export class MemoryIndexer extends Feature {
         this.presenceMap = new Map(); // peerKey → { address, nick, capabilities, lastSeen, ts }
         this.presenceTTL = 10 * 60 * 1000; // 10 minutes
 
+        // Event notifications — listeners receive { event, ...data } for each network event
+        this._eventListeners = [];
+
         // Bootstrap peer flag — only the bootstrap processes append_relay messages
         this._isBootstrapPeer = options.isBootstrapPeer || false;
+    }
+
+    /**
+     * Register an event listener for network notifications.
+     * Callback receives { type: "event", event: string, ...data }.
+     */
+    onEvent(callback) {
+        this._eventListeners.push(callback);
+    }
+
+    /**
+     * Emit an event to all registered listeners.
+     */
+    _emitEvent(event, data) {
+        const payload = { type: 'event', event, ts: Date.now(), ...data };
+        for (const listener of this._eventListeners) {
+            try { listener(payload); } catch (_e) { /* ignore */ }
+        }
     }
 
     /**
@@ -398,6 +419,14 @@ export class MemoryIndexer extends Feature {
         if (access === 'gated' && msg.price) appendPayload.price = String(msg.price);
         await this.append('register_memory', appendPayload);
         console.log('MemoryIndexer: appended register_memory for', memory_id);
+
+        // Notify: new memory arrived on the network
+        if (author !== this.peerId) {
+            this._emitEvent(access === 'gated' ? 'new_gated' : 'new_memory', {
+                memory_id, cortex, author, access,
+                price: (access === 'gated' && msg.price) ? msg.price : null,
+            });
+        }
     }
 
     /**
@@ -683,6 +712,17 @@ export class MemoryIndexer extends Feature {
             if (this.nodeAddress) feeEntry.served_by = String(this.nodeAddress);
             await this.append('record_fee', feeEntry);
             console.log('MemoryIndexer: appended record_fee for', memory_id, '— creator_txid:', payment_txid_creator, '— node_txid:', payment_txid_node);
+
+            // Notify: someone paid for our content
+            if (stored.author === this.peerId) {
+                this._emitEvent('earning', {
+                    memory_id,
+                    operation: 'read_gated',
+                    buyer: msg.payer || 'unknown',
+                    amount: feeAmount,
+                    your_share: split.creator_share,
+                });
+            }
         }
     }
     // ==================== P2P Relay ====================
@@ -915,6 +955,13 @@ export class MemoryIndexer extends Feature {
             content_hash: contentHash
         });
         console.log('MemoryIndexer: appended register_skill for', skill_id);
+
+        // Notify: new skill published on the network
+        if (author !== this.peerId) {
+            this._emitEvent('new_skill', {
+                skill_id, name, description, cortex, price, version, author,
+            });
+        }
     }
 
     /**
@@ -1006,6 +1053,17 @@ export class MemoryIndexer extends Feature {
             if (this.nodeAddress) dlEntry.served_by = String(this.nodeAddress);
             await this.append('record_skill_download', dlEntry);
             console.log('MemoryIndexer: appended record_skill_download for', skill_id, '— txid:', payment_txid_creator);
+
+            // Notify: someone downloaded our skill
+            if (stored.author === this.peerId) {
+                this._emitEvent('earning', {
+                    memory_id: skill_id,
+                    operation: 'skill_download',
+                    buyer: msg.payer || msg.buyer || 'unknown',
+                    amount: stored.price || this.defaultFeeAmount,
+                    your_share: String(BigInt(stored.price || this.defaultFeeAmount) * 80n / 100n),
+                });
+            }
         }
     }
 
