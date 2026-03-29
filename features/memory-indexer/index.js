@@ -1078,8 +1078,10 @@ export class MemoryIndexer extends Feature {
     async _handleSkillCatalog(channel, msg, replyFn) {
         const cortexFilter = msg.cortex || msg.channel || null;
         const skills = [];
+        const seenIds = new Set();
         const baseView = this.peer?.base?.view || null;
 
+        // 1. Scan local skill files
         if (fs.existsSync(this.skillsDir)) {
             const files = fs.readdirSync(this.skillsDir).filter(f => f.endsWith('.json'));
             for (const file of files) {
@@ -1104,7 +1106,42 @@ export class MemoryIndexer extends Feature {
                     version: stored.version,
                     downloads: downloads
                 });
+                seenIds.add(stored.skill_id);
             }
+        }
+
+        // 2. Scan contract state for skills without local files (remote skills)
+        if (baseView) {
+            try {
+                const prefix = cortexFilter ? 'skill_by_cortex/' + cortexFilter + '/' : 'skill/';
+                const stream = baseView.createReadStream({ gte: prefix, lt: prefix + '\xff' });
+                for await (const entry of stream) {
+                    const key = typeof entry.key === 'string' ? entry.key : entry.key.toString('utf8');
+                    const skillId = cortexFilter
+                        ? key.slice(('skill_by_cortex/' + cortexFilter + '/').length)
+                        : key.slice('skill/'.length);
+                    if (seenIds.has(skillId)) continue;
+
+                    const metaEntry = cortexFilter
+                        ? await baseView.get('skill/' + skillId)
+                        : entry;
+                    if (!metaEntry?.value) continue;
+                    const meta = metaEntry.value;
+
+                    if (cortexFilter && meta.cortex !== cortexFilter) continue;
+
+                    skills.push({
+                        skill_id: skillId,
+                        name: meta.name,
+                        description: meta.description,
+                        cortex: meta.cortex,
+                        price: meta.price,
+                        version: meta.version,
+                        downloads: meta.downloads || 0
+                    });
+                    seenIds.add(skillId);
+                }
+            } catch (_e) { /* contract state may not be ready */ }
         }
 
         const response = {
@@ -1312,7 +1349,7 @@ export class MemoryIndexer extends Feature {
      */
     async _handleSkillSearch(channel, msg, replyFn) {
         const query = typeof msg.query === 'string' ? msg.query.trim().toLowerCase() : '';
-        const cortexFilter = msg.cortex || null;
+        const cortexFilter = msg.cortex || msg.channel || null;
         const limit = Number.isInteger(msg.limit) && msg.limit > 0 ? Math.min(msg.limit, 50) : 20;
 
         if (!query) {
@@ -1324,6 +1361,9 @@ export class MemoryIndexer extends Feature {
         }
 
         const results = [];
+        const seenIds = new Set();
+
+        // 1. Search local skill files
         if (fs.existsSync(this.skillsDir)) {
             const files = fs.readdirSync(this.skillsDir).filter(f => f.endsWith('.json'));
             for (const file of files) {
@@ -1354,9 +1394,44 @@ export class MemoryIndexer extends Feature {
                         version: stored.version,
                         author: stored.author
                     });
+                    seenIds.add(stored.skill_id);
                     if (results.length >= limit) break;
                 }
             }
+        }
+
+        // 2. Search contract state for remote skills
+        if (results.length < limit && this.peer.base?.view) {
+            try {
+                const stream = this.peer.base.view.createReadStream({ gte: 'skill/', lt: 'skill0' });
+                for await (const entry of stream) {
+                    if (results.length >= limit) break;
+                    const key = typeof entry.key === 'string' ? entry.key : entry.key.toString('utf8');
+                    const skillId = key.slice('skill/'.length);
+                    if (seenIds.has(skillId)) continue;
+                    const meta = entry.value;
+                    if (!meta) continue;
+                    if (cortexFilter && meta.cortex !== cortexFilter) continue;
+
+                    const nameLower = (meta.name || '').toLowerCase();
+                    const descLower = (meta.description || '').toLowerCase();
+                    const cortexLower = (meta.cortex || '').toLowerCase();
+                    const matched = nameLower.includes(query) || descLower.includes(query) ||
+                        cortexLower.includes(query) || skillId.toLowerCase().includes(query);
+                    if (matched) {
+                        results.push({
+                            skill_id: skillId,
+                            name: meta.name,
+                            description: meta.description,
+                            cortex: meta.cortex,
+                            price: meta.price,
+                            version: meta.version,
+                            author: meta.author
+                        });
+                        seenIds.add(skillId);
+                    }
+                }
+            } catch (_e) { /* contract state may not be ready */ }
         }
 
         const response = {
