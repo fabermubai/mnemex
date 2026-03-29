@@ -135,8 +135,8 @@ class MnemexContract extends Contract {
                 name: { type: "string", min: 1, max: 128 },
                 description: { type: "string", min: 1, max: 1024 },
                 cortex: { type: "string", min: 1, max: 64 },
-                inputs: { type: "string", min: 1, max: 2048 },
-                outputs: { type: "string", min: 1, max: 2048 },
+                inputs: { type: "string", min: 0, max: 2048, optional: true },
+                outputs: { type: "string", min: 0, max: 2048, optional: true },
                 content_hash: { type: "string", min: 64, max: 64 },
                 price: { type: "string", min: 1, max: 64 },
                 version: { type: "string", min: 1, max: 16 }
