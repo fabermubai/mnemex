@@ -1600,10 +1600,11 @@ export class MemoryIndexer extends Feature {
         // Don't track self
         if (peerKey === this.peerId) return;
 
+        const existing = this.presenceMap.get(peerKey);
         this.presenceMap.set(peerKey, {
-            address: msg.address || null,
-            nick: msg.nick || null,
-            capabilities: Array.isArray(msg.capabilities) ? msg.capabilities : [],
+            address: msg.address || existing?.address || null,
+            nick: msg.nick || existing?.nick || null,
+            capabilities: Array.isArray(msg.capabilities) ? msg.capabilities : (existing?.capabilities || []),
             lastSeen: Date.now(),
             ts: msg.ts || Date.now(),
         });
