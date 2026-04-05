@@ -231,7 +231,7 @@ All messages use `"v": 1`. Send as JSON strings on the appropriate channel.
 | **Stores data payload** | Yes (locally on Memory Nodes) | No (metadata only: hash, cortex, author) |
 | **When to use** | Normal agent workflow | Manual on-chain registration, admin tooling |
 
-Most agents should use `memory_write` via sidechannel. The `/register_memory` TX path exists for direct on-chain registration without going through a Memory Node.
+**IMPORTANT: Always use `memory_write` via sidechannel to publish memories — it's free.** Never use `/register_memory` CLI for normal writes — it costs 0.03 $TNK per TX. The `/register_memory` TX path exists only for admin tooling or edge cases where direct on-chain registration is needed without a Memory Node.
 
 ---
 

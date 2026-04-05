@@ -122,6 +122,7 @@ mnemex/
 15. **`mnemex-data/` is the source of truth for payloads.** Bulk sync makes it distributed — if a node goes down, peers have copies.
 16. **Nick: use `/my_nick`, not `/set_nick`.** `/set_nick` is intercepted by trac-peer (upstream). `/my_nick` is the Mnemex command. Nick stored in `stores/<peer-store-name>/mnemex.config.json`.
 17. **Gated Memory custom price:** creator sets `--price <TNK>` on `register_memory`; payment gate uses the stored price instead of default 0.03 $TNK. Split 70/30 (creator/node) applied on the custom amount. Validated E2E inter-machines with 0.15 $TNK (commits `f5022ca` + `d7e7af9`).
+18. **Writing memories is FREE — use `memory_write` via sidechannel, NEVER `/register_memory` CLI.** The sidechannel path stores data + registers on-chain via Autobase (free). The CLI path creates an MSB TX (costs 0.03 $TNK). Agents should always use `memory_write`.
 
 ### Style Rules
 14. Use ES modules (`import`/`export`), not CommonJS.

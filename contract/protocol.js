@@ -143,44 +143,10 @@ class MnemexProtocol extends Protocol{
         const obj = { type : '', value : null };
         const json = this.safeJsonParse(command);
 
-        if (json.op === 'register_memory') {
-            obj.type = 'register_memory';
-            obj.value = json;
-            return obj;
-        }
-
-        // query_memory is read-only — handled directly in customCommand via getSigned().
-        // Not mapped here because it does not need a TX (no state change, no MSB fee).
-
-        if (json.op === 'record_fee') {
-            obj.type = 'record_fee';
-            obj.value = json;
-            return obj;
-        }
-
-        if (json.op === 'register_stake') {
-            obj.type = 'register_stake';
-            obj.value = json;
-            return obj;
-        }
-
-        if (json.op === 'slash_stake') {
-            obj.type = 'slash_stake';
-            obj.value = json;
-            return obj;
-        }
-
-        if (json.op === 'release_stake') {
-            obj.type = 'release_stake';
-            obj.value = json;
-            return obj;
-        }
-
-        if (json.op === 'register_skill') {
-            obj.type = 'register_skill';
-            obj.value = json;
-            return obj;
-        }
+        // All state-changing operations (register_memory, record_fee, register_skill,
+        // record_skill_download, follow_agent, etc.) are handled internally by the
+        // MemoryIndexer via this.append() (Autobase, free). No CLI TX commands needed.
+        // Only update_skill and register_cortex remain as TX commands (admin/author tooling).
 
         if (json.op === 'update_skill') {
             obj.type = 'update_skill';
@@ -188,26 +154,8 @@ class MnemexProtocol extends Protocol{
             return obj;
         }
 
-        if (json.op === 'record_skill_download') {
-            obj.type = 'record_skill_download';
-            obj.value = json;
-            return obj;
-        }
-
         if (json.op === 'register_cortex') {
             obj.type = 'register_cortex';
-            obj.value = json;
-            return obj;
-        }
-
-        if (json.op === 'follow_agent') {
-            obj.type = 'follow_agent';
-            obj.value = json;
-            return obj;
-        }
-
-        if (json.op === 'unfollow_agent') {
-            obj.type = 'unfollow_agent';
             obj.value = json;
             return obj;
         }
@@ -228,9 +176,7 @@ class MnemexProtocol extends Protocol{
         console.log('- /my_nick "<nick>"');
         console.log('    Change your nick (3-20 chars, alphanumeric/dashes/underscores). Takes effect immediately.');
         console.log(' ');
-        console.log('- Mnemex Memory Commands:');
-        console.log('- /register_memory --memory_id "<id>" --cortex "<name>" --content_hash "<sha256>" [--access "open"|"gated"] [--tags "tag1,tag2"] [--price <TNK>] [--ts <ms>]');
-        console.log('    Register a memory entry on-chain (submits MSB TX, costs 0.03 $TNK). --price: gated only, in TNK (e.g. 0.5), default 0.03.');
+        console.log('- Mnemex Memory Commands (use memory_write via sidechannel to publish — free):');
         console.log('- /query_memory --memory_id "<id>"');
         console.log('    Look up a memory entry locally (no TX, no fee).');
         console.log('- /memory_read --memory_id "<id>" [--cortex "<channel>"]');
@@ -243,8 +189,6 @@ class MnemexProtocol extends Protocol{
         console.log('    Check memory existence in author/cortex indexes.');
         console.log(' ');
         console.log('- Mnemex Fee Commands:');
-        console.log('- /record_fee --memory_id "<id>" --operation "read_gated"|"skill_download" --payer "<pubkey>" --payment_txid "<hash>" --amount "<bigint>"');
-        console.log('    Record a fee payment and split revenue (submits MSB TX).');
         console.log('- /get_balance --address "<pubkey>"');
         console.log('    Check earnings for an address (local read).');
         console.log('- /get_stats');
@@ -256,23 +200,9 @@ class MnemexProtocol extends Protocol{
         console.log('- /reputation --address "<pubkey>"');
         console.log('    Show reputation score for an address (local read).');
         console.log(' ');
-        console.log('- Mnemex Staking Commands:');
-        console.log('- /register_stake --memory_id "<id>" --stake_txid "<hash>" --stake_amount "<bigint>"');
-        console.log('    Stake TNK on a memory you authored (submits MSB TX).');
-        console.log('- /slash_stake --memory_id "<id>" --reason "<text>"');
-        console.log('    Slash a stake for bad data — admin only (submits MSB TX).');
-        console.log('- /release_stake --memory_id "<id>"');
-        console.log('    Release a stake after verification — admin only (submits MSB TX).');
-        console.log('- /list_stakes [--address "<pubkey>"]');
-        console.log('    Show stakes for an address (defaults to current peer).');
-        console.log(' ');
-        console.log('- Mnemex Skill Commands:');
-        console.log('- /register_skill --skill_id "<id>" --name "<name>" --description "<desc>" --cortex "<cortex>" --inputs "<json>" --outputs "<json>" --content_hash "<sha256>" --price "<bigint>" --version "<ver>"');
-        console.log('    Publish a new Skill with descriptor (inputs/outputs/content) to the registry (submits MSB TX).');
+        console.log('- Mnemex Skill Commands (use skill_publish via sidechannel to publish — free):');
         console.log('- /update_skill --skill_id "<hash>" [--description "<desc>"] [--price "<bigint>"] [--version "<ver>"] [--status "active"|"deprecated"]');
         console.log('    Update metadata of a Skill you authored (submits MSB TX).');
-        console.log('- /record_skill_download --skill_id "<hash>" --buyer "<pubkey>" --payment_txid "<hash>" --amount "<bigint>"');
-        console.log('    Record a completed skill download with fee split (submits MSB TX).');
         console.log('- /query_skill --skill_id "<hash>"');
         console.log('    Look up a skill by ID (local read).');
         console.log('- /list_skills');
@@ -366,54 +296,6 @@ class MnemexProtocol extends Protocol{
             saveConfig(storePath, { nick: raw });
             this.peer._mnemexConfig.nick = raw;
             console.log('✓ Nick updated: ' + raw + ' (restart not required)');
-            return;
-        }
-
-        if (this.input.startsWith("/register_memory")) {
-            const args = this.parseArgs(input);
-            const memoryId = args.memory_id || args.id;
-            const cortex = args.cortex;
-            const access = args.access || 'open';
-            const contentHash = args.content_hash || args.hash;
-            const tags = args.tags || '';
-            const priceRaw = args.price;
-            const tsRaw = args.ts;
-            if (!memoryId || !cortex || !contentHash) {
-                console.log('Usage: /register_memory --memory_id "<id>" --cortex "<name>" --content_hash "<sha256>" [--access "open"|"gated"] [--tags "tag1,tag2"] [--price <TNK>] [--ts <ms>]');
-                return;
-            }
-            if (access !== 'open' && access !== 'gated') {
-                console.log('Error: --access must be "open" or "gated".');
-                return;
-            }
-            if (contentHash.length !== 64) {
-                console.log('Error: --content_hash must be a 64-char hex SHA256 hash.');
-                return;
-            }
-            const author = this.peer.wallet.publicKey;
-            const ts = tsRaw ? Number(tsRaw) : Date.now();
-            const txPayload = {
-                op: 'register_memory',
-                memory_id: String(memoryId),
-                cortex: String(cortex),
-                author: String(author),
-                access: String(access),
-                content_hash: String(contentHash),
-                ts: ts
-            };
-            if (tags) txPayload.tags = String(tags);
-            if (access === 'gated' && priceRaw) {
-                const priceTNK = parseFloat(priceRaw);
-                if (isNaN(priceTNK) || priceTNK < 0) {
-                    console.log('Error: --price must be a positive number in TNK (e.g. 0.5).');
-                    return;
-                }
-                txPayload.price = Math.round(priceTNK * 1e18).toString();
-            }
-            const command = this.safeJsonStringify(txPayload);
-            console.log('Submitting register_memory TX...');
-            console.log('Run: /tx --command \'' + command + '\'');
-            console.log('Or simulate: /tx --command \'' + command + '\' --sim 1');
             return;
         }
 
@@ -643,40 +525,6 @@ class MnemexProtocol extends Protocol{
 
         // ==================== Mnemex Fee Commands ====================
 
-        if (this.input.startsWith("/record_fee")) {
-            const args = this.parseArgs(input);
-            const memoryId = args.memory_id || args.id;
-            const operation = args.operation || args.op_type;
-            const payer = args.payer;
-            const paymentTxid = args.payment_txid || args.txid;
-            const amount = args.amount;
-            const tsRaw = args.ts;
-            if (!memoryId || !operation || !payer || !paymentTxid || !amount) {
-                console.log('Usage: /record_fee --memory_id "<id>" --operation "read_gated"|"skill_download" --payer "<pubkey>" --payment_txid "<hash>" --amount "<bigint>"');
-                return;
-            }
-            if (operation !== 'read_gated' && operation !== 'skill_download') {
-                console.log('Error: --operation must be "read_gated" or "skill_download".');
-                return;
-            }
-            const ts = tsRaw ? Number(tsRaw) : Date.now();
-            const servedBy = args.served_by || args.node;
-            const feeObj = {
-                op: 'record_fee',
-                memory_id: String(memoryId),
-                operation: String(operation),
-                payer: String(payer),
-                payment_txid: String(paymentTxid),
-                amount: String(amount),
-                ts: ts
-            };
-            if (servedBy) feeObj.served_by = String(servedBy);
-            const command = this.safeJsonStringify(feeObj);
-            console.log('Submitting record_fee TX...');
-            console.log('Run: /tx --command \'' + command + '\'');
-            return;
-        }
-
         if (this.input.startsWith("/my_address")) {
             console.log('Peer pubkey (hex):', this.peer.wallet.publicKey);
             console.log('Peer trac address:', this.peer.wallet.address);
@@ -829,128 +677,7 @@ class MnemexProtocol extends Protocol{
             return;
         }
 
-        // ==================== Mnemex Staking Commands ====================
-
-        if (this.input.startsWith("/register_stake")) {
-            const args = this.parseArgs(input);
-            const memoryId = args.memory_id || args.id;
-            const stakeTxid = args.stake_txid || args.txid;
-            const stakeAmount = args.stake_amount || args.amount;
-            if (!memoryId || !stakeTxid || !stakeAmount) {
-                console.log('Usage: /register_stake --memory_id "<id>" --stake_txid "<hash>" --stake_amount "<bigint>"');
-                return;
-            }
-            const command = this.safeJsonStringify({
-                op: 'register_stake',
-                memory_id: String(memoryId),
-                stake_txid: String(stakeTxid),
-                stake_amount: String(stakeAmount)
-            });
-            console.log('Submitting register_stake TX...');
-            console.log('Run: /tx --command \'' + command + '\'');
-            return;
-        }
-
-        if (this.input.startsWith("/slash_stake")) {
-            const args = this.parseArgs(input);
-            const memoryId = args.memory_id || args.id;
-            const reason = args.reason;
-            if (!memoryId || !reason) {
-                console.log('Usage: /slash_stake --memory_id "<id>" --reason "<text>"');
-                return;
-            }
-            const command = this.safeJsonStringify({
-                op: 'slash_stake',
-                memory_id: String(memoryId),
-                reason: String(reason)
-            });
-            console.log('Submitting slash_stake TX...');
-            console.log('Run: /tx --command \'' + command + '\'');
-            return;
-        }
-
-        if (this.input.startsWith("/release_stake")) {
-            const args = this.parseArgs(input);
-            const memoryId = args.memory_id || args.id;
-            if (!memoryId) {
-                console.log('Usage: /release_stake --memory_id "<id>"');
-                return;
-            }
-            const command = this.safeJsonStringify({
-                op: 'release_stake',
-                memory_id: String(memoryId)
-            });
-            console.log('Submitting release_stake TX...');
-            console.log('Run: /tx --command \'' + command + '\'');
-            return;
-        }
-
-        if (this.input.startsWith("/list_stakes")) {
-            const args = this.parseArgs(input);
-            const address = args.address || args.addr || this.peer.wallet.publicKey;
-            const totalStaked = await this.getSigned('staked_by/' + address);
-            console.log('Total staked by', address + ':', totalStaked !== null ? totalStaked : '0');
-            const results = [];
-            try {
-                const stream = this.peer.base.view.createReadStream({ gte: 'stake/', lt: 'stake0' });
-                for await (const entry of stream) {
-                    const key = typeof entry.key === 'string' ? entry.key : b4a.toString(entry.key, 'utf8');
-                    if (entry.value && entry.value.author === address) {
-                        results.push({ key, value: entry.value });
-                    }
-                }
-            } catch (_e) {
-                console.log('Could not read stake records (view not ready).');
-                return;
-            }
-            if (results.length === 0) {
-                console.log('No stake records found for this address.');
-            } else {
-                console.log('Stakes (' + results.length + '):');
-                for (const r of results) {
-                    console.log(' ', r.key, '→', r.value);
-                }
-            }
-            return;
-        }
-
         // ==================== Mnemex Skill Commands ====================
-
-        if (this.input.startsWith("/register_skill")) {
-            const args = this.parseArgs(input);
-            const skillId = args.skill_id || args.id;
-            const name = args.name;
-            const description = args.description || args.desc;
-            const cortex = args.cortex;
-            const inputs = args.inputs;
-            const outputs = args.outputs;
-            const contentHash = args.content_hash || args.hash;
-            const price = args.price;
-            const version = args.version || args.ver;
-            if (!skillId || !name || !description || !cortex || !inputs || !outputs || !contentHash || !price || !version) {
-                console.log('Usage: /register_skill --skill_id "<id>" --name "<name>" --description "<desc>" --cortex "<cortex>" --inputs "<json>" --outputs "<json>" --content_hash "<sha256>" --price "<bigint>" --version "<ver>"');
-                return;
-            }
-            if (contentHash.length !== 64) {
-                console.log('Error: --content_hash must be a 64-char hex SHA256 hash.');
-                return;
-            }
-            const command = this.safeJsonStringify({
-                op: 'register_skill',
-                skill_id: String(skillId),
-                name: String(name),
-                description: String(description),
-                cortex: String(cortex),
-                inputs: String(inputs),
-                outputs: String(outputs),
-                content_hash: String(contentHash),
-                price: String(price),
-                version: String(version)
-            });
-            console.log('Submitting register_skill TX...');
-            console.log('Run: /tx --command \'' + command + '\'');
-            return;
-        }
 
         if (this.input.startsWith("/update_skill")) {
             const args = this.parseArgs(input);
@@ -972,28 +699,6 @@ class MnemexProtocol extends Protocol{
             }
             const command = this.safeJsonStringify(payload);
             console.log('Submitting update_skill TX...');
-            console.log('Run: /tx --command \'' + command + '\'');
-            return;
-        }
-
-        if (this.input.startsWith("/record_skill_download")) {
-            const args = this.parseArgs(input);
-            const skillId = args.skill_id || args.id;
-            const buyer = args.buyer;
-            const paymentTxid = args.payment_txid || args.txid;
-            const amount = args.amount;
-            if (!skillId || !buyer || !paymentTxid || !amount) {
-                console.log('Usage: /record_skill_download --skill_id "<hash>" --buyer "<pubkey>" --payment_txid "<hash>" --amount "<bigint>"');
-                return;
-            }
-            const command = this.safeJsonStringify({
-                op: 'record_skill_download',
-                skill_id: String(skillId),
-                buyer: String(buyer),
-                payment_txid: String(paymentTxid),
-                amount: String(amount)
-            });
-            console.log('Submitting record_skill_download TX...');
             console.log('Run: /tx --command \'' + command + '\'');
             return;
         }
