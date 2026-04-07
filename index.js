@@ -600,16 +600,7 @@ const _promoteToIndexer = async (writerKeyHex) => {
   }
 };
 
-// Listen for peer_announce with writer_key → auto-promote
-if (isBootstrap && memoryIndexer) {
-  const origHandlePeerAnnounce = memoryIndexer._handlePeerAnnounce.bind(memoryIndexer);
-  memoryIndexer._handlePeerAnnounce = (msg, connection) => {
-    origHandlePeerAnnounce(msg, connection);
-    if (msg.writer_key) {
-      _promoteToIndexer(msg.writer_key);
-    }
-  };
-}
+// NOTE: peer_announce hook for auto-promote is set up after memoryIndexer creation (below)
 
 // Fallback: also scan activeWriters periodically
 if (isBootstrap) {
@@ -708,6 +699,17 @@ const memoryIndexer = new MemoryIndexer(peer, {
 await peer.protocol.instance.addFeature('memory_indexer', memoryIndexer);
 peer._memoryIndexer = memoryIndexer;
 memoryIndexer.start().catch((err) => console.error('MemoryIndexer feature stopped:', err?.message ?? err));
+
+// Hook peer_announce for auto-promote writers to indexers (must be after memoryIndexer creation)
+if (isBootstrap) {
+  const origHandlePeerAnnounce = memoryIndexer._handlePeerAnnounce.bind(memoryIndexer);
+  memoryIndexer._handlePeerAnnounce = (msg, connection) => {
+    origHandlePeerAnnounce(msg, connection);
+    if (msg.writer_key) {
+      _promoteToIndexer(msg.writer_key);
+    }
+  };
+}
 
 let scBridge = null;
 if (scBridgeEnabled) {
