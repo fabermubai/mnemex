@@ -6,8 +6,14 @@
 - [ ] Clients légers : un utilisateur avec juste un wallet Trac + connexion WebSocket peut utiliser Mnemex sans peer
 
 ## Intégrations
-- [ ] Bot Telegram connecté à Mnemex via SC-Bridge
+- [ ] Bot Telegram/Discord connecté à Mnemex via SC-Bridge — agent permanent qui notifie l'humain en temps réel (nouvelles memories, gated, skills, earnings, chat)
 - [ ] Exemple d'agent autonome (Claude/GPT) connecté via WebSocket
+
+## Protocole
+- [ ] Fix MSB verification trust fallback — actuellement un faux txid passe si la vérification MSB timeout (8s). Permet de lire des gated sans payer. Soit accélérer la vérification MSB, soit retirer le trust fallback, soit vérifier async après livraison et blacklist les fraudeurs.
+- [ ] Échange de fichiers (PDF, images) via Hyperblobs + hash on-chain
+- [ ] Réplication gated (CDN payant) — un Memory Node paie une fois et revend
+- [ ] Investiguer auto-add writer / auto-promote indexer (handshake Autobase ne fonctionne pas toujours)
 
 ## Contract
 - [ ] Memory update — permettre l'écrasement on-chain si `existing.author === new.author` (actuellement first-write-wins, le data local est écrasé mais le metadata on-chain reste bloqué sur le premier write)
