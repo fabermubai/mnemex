@@ -567,42 +567,63 @@ if (isBootstrap) {
 
 /* ── Auto-promote writers to indexers ────────────────────────────────────
  * Every node should be an indexer so the network survives any node going
- * offline. The bootstrap peer periodically checks for writers that aren't
- * yet indexers and promotes them via addIndexer.
+ * offline. The bootstrap peer promotes peers to indexer when it receives
+ * their peer_announce with a writer_key. Also scans activeWriters as fallback.
  * IMPORTANT: all peers MUST run the same contract.js code, otherwise
  * views diverge and cause INVALID_SIGNATURE errors.
  * ──────────────────────────────────────────────────────────────────────── */
+const _promotedKeys = new Set();
+// Add own key to avoid self-promotion
+if (peer.writerLocalKey) _promotedKeys.add(peer.writerLocalKey);
+
+const _promoteToIndexer = async (writerKeyHex) => {
+  if (!isBootstrap) return;
+  if (!writerKeyHex || _promotedKeys.has(writerKeyHex)) return;
+  try {
+    const nonce = peer.protocol.instance.generateNonce();
+    const msg = { type: 'addIndexer', key: writerKeyHex };
+    const hash = peer.wallet.sign(JSON.stringify(msg) + nonce);
+    await peer.base.append({
+      op: 'append_writer',
+      type: 'addIndexer',
+      key: writerKeyHex,
+      value: { msg },
+      hash,
+      nonce,
+    });
+    _promotedKeys.add(writerKeyHex);
+    console.log('Auto-promoted writer to indexer:', writerKeyHex.slice(0, 12) + '...');
+  } catch (err) {
+    if (err?.message !== 'Peer is not writable.') {
+      console.error('Indexer promotion error:', err?.message ?? err);
+    }
+  }
+};
+
+// Listen for peer_announce with writer_key → auto-promote
+if (isBootstrap && memoryIndexer) {
+  const origHandlePeerAnnounce = memoryIndexer._handlePeerAnnounce.bind(memoryIndexer);
+  memoryIndexer._handlePeerAnnounce = (msg, connection) => {
+    origHandlePeerAnnounce(msg, connection);
+    if (msg.writer_key) {
+      _promoteToIndexer(msg.writer_key);
+    }
+  };
+}
+
+// Fallback: also scan activeWriters periodically
 if (isBootstrap) {
-  const _promotedKeys = new Set();
-  const _promoteWritersToIndexers = async () => {
+  const _promoteActiveWriters = async () => {
     try {
       for (const w of peer.base.activeWriters) {
         const hex = w.core.key.toString('hex');
-        if (_promotedKeys.has(hex)) continue;
         if (peer.base._isLocalCore(w.core)) continue;
-        // Promote this writer to indexer
-        const nonce = peer.protocol.instance.generateNonce();
-        const msg = { type: 'addIndexer', key: hex };
-        const hash = peer.wallet.sign(JSON.stringify(msg) + nonce);
-        await peer.base.append({
-          op: 'append_writer',
-          type: 'addIndexer',
-          key: hex,
-          value: { msg },
-          hash,
-          nonce,
-        });
-        _promotedKeys.add(hex);
-        console.log('Auto-promoted writer to indexer:', hex.slice(0, 12) + '...');
+        await _promoteToIndexer(hex);
       }
-    } catch (err) {
-      if (err?.message !== 'Peer is not writable.') {
-        console.error('Indexer promotion error:', err?.message ?? err);
-      }
-    }
+    } catch (_err) { /* ignore */ }
   };
-  setTimeout(_promoteWritersToIndexers, 15_000);
-  setInterval(_promoteWritersToIndexers, 60_000);
+  setTimeout(_promoteActiveWriters, 15_000);
+  setInterval(_promoteActiveWriters, 60_000);
 }
 
 peer._msb = msb;
@@ -1118,6 +1139,7 @@ const emitPeerAnnounce = () => {
       v: 1,
       type: 'peer_announce',
       peer_key: peer.wallet.publicKey,
+      writer_key: peer.writerLocalKey || null,
       address: peer.wallet.address || null,
       nick: peer._mnemexConfig.nick || null,
       capabilities: ['memory_node'],

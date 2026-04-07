@@ -1658,6 +1658,7 @@ export class MemoryIndexer extends Feature {
         this.presenceMap.set(peerKey, {
             address: msg.address || existing?.address || null,
             nick: msg.nick || existing?.nick || null,
+            writer_key: msg.writer_key || existing?.writer_key || null,
             capabilities: Array.isArray(msg.capabilities) ? msg.capabilities : (existing?.capabilities || []),
             lastSeen: Date.now(),
             ts: msg.ts || Date.now(),
