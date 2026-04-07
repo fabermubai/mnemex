@@ -10,7 +10,8 @@
 - [ ] Exemple d'agent autonome (Claude/GPT) connecté via WebSocket
 
 ## Protocole
-- [ ] Fix MSB verification trust fallback — actuellement un faux txid passe si la vérification MSB timeout (8s). Permet de lire des gated sans payer. Soit accélérer la vérification MSB, soit retirer le trust fallback, soit vérifier async après livraison et blacklist les fraudeurs.
+- [x] ~~Fix MSB verification trust fallback~~ — DONE: trust fallback retiré, faux txids rejetés
+- [ ] Vérifier montant + destinataire des paiements — actuellement on vérifie seulement que le txid existe sur le MSB, pas que le paiement est au bon montant/adresse. Nécessite une API MSB pour lire les détails de transaction (pas disponible upstream pour l'instant). Risque: réutilisation de txids d'autres transactions.
 - [ ] Échange de fichiers (PDF, images) via Hyperblobs + hash on-chain
 - [ ] Réplication gated (CDN payant) — un Memory Node paie une fois et revend
 - [ ] Investiguer auto-add writer / auto-promote indexer (handshake Autobase ne fonctionne pas toujours)
