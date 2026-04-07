@@ -945,6 +945,7 @@ describe('MemoryIndexer — MSB dual-txid verification', () => {
             msb: mockMsb,
             paymentRetryMs: 0,
             paymentMaxAttempts: 1,
+            paymentSkipApi: true,
             isBootstrapPeer: true,
         });
         indexer.key = 'memory_indexer';
@@ -999,6 +1000,7 @@ describe('MemoryIndexer — MSB dual-txid verification', () => {
             msb: mockMsb,
             paymentRetryMs: 0,
             paymentMaxAttempts: 1,
+            paymentSkipApi: true,
             isBootstrapPeer: true,
         });
         indexer.key = 'memory_indexer';
@@ -1042,6 +1044,7 @@ describe('MemoryIndexer — MSB dual-txid verification', () => {
             msb: mockMsb,
             paymentRetryMs: 0,
             paymentMaxAttempts: 1,
+            paymentSkipApi: true,
             isBootstrapPeer: true,
         });
         indexer.key = 'memory_indexer';

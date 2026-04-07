@@ -2,6 +2,7 @@ import {Feature} from 'trac-peer';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { verifyPayment } from '../../src/fees/verify-payment.js';
 
 export class MemoryIndexer extends Feature {
 
@@ -32,7 +33,9 @@ export class MemoryIndexer extends Feature {
         // MSB payment verification retry settings
         this.paymentRetryMs = options.paymentRetryMs ?? 3000;
         this.paymentMaxAttempts = options.paymentMaxAttempts ?? 10;
-        this.paymentVerifyTimeoutMs = options.paymentVerifyTimeoutMs ?? 8000; // per-call timeout
+        this.paymentVerifyTimeoutMs = options.paymentVerifyTimeoutMs ?? 8000; // per-call MSB timeout
+        this.paymentApiTimeoutMs = options.paymentApiTimeoutMs ?? 7000; // per-call TracAPI timeout
+        this.paymentSkipApi = options.paymentSkipApi ?? false; // skip TracAPI (for testing)
 
         // P2P relay: when a memory isn't found locally, broadcast to the network
         this.pendingRelays = new Map(); // request_id → { replyFn, channel, timer }
@@ -610,64 +613,62 @@ export class MemoryIndexer extends Feature {
             return;
         }
 
-        // Verify both payments on MSB if msb is available.
-        // getTransactionConfirmedLength does a linear scan of MSB history which can
-        // be very slow (28K+ entries). We add a per-call timeout to prevent hanging.
-        // If verification times out, payment is REJECTED — never serve gated content
-        // without confirmed payment.
+        // Verify both payments via TracAPI (validates recipient + amount) with MSB fallback.
+        // Hard fail on recipient/amount mismatch (fraud). Soft fail on network errors.
+        // Skip verification if MSB is not available (test environment).
         if (this.requirePayment && hasPayment && this.msb) {
-            const verifyTimeoutMs = this.paymentVerifyTimeoutMs || 8000;
+            const feeAmount = (stored.access === 'gated' && stored.price) ? stored.price : this.defaultFeeAmount;
+            const split = this._computeFeeSplit(stored.access, feeAmount);
+            const creatorAddress = this._getCreatorAddress(stored.author);
             const maxAttempts = this.paymentMaxAttempts;
             const retryDelayMs = this.paymentRetryMs;
-            let creatorConfirmed = false;
-            let nodeConfirmed = false;
 
-            const verifyWithTimeout = (txid) => {
-                return Promise.race([
-                    this.msb.state.getTransactionConfirmedLength(txid),
-                    new Promise(resolve => setTimeout(() => resolve('timeout'), verifyTimeoutMs))
-                ]);
-            };
+            let creatorResult = { confirmed: false };
+            let nodeResult = { confirmed: false };
 
             for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-                if (!creatorConfirmed) {
-                    const result = await verifyWithTimeout(payment_txid_creator);
-                    if (result === 'timeout') {
-                        console.log('MemoryIndexer: MSB verification timeout for creator txid — payment NOT confirmed (attempt ' + attempt + '/' + maxAttempts + ')');
-                    } else if (result !== null) {
-                        creatorConfirmed = true;
-                    }
+                if (!creatorResult.confirmed) {
+                    creatorResult = await verifyPayment(
+                        payment_txid_creator, creatorAddress, split.creator_share, this.msb,
+                        { apiTimeoutMs: this.paymentApiTimeoutMs, msbTimeoutMs: this.paymentVerifyTimeoutMs, skipApi: this.paymentSkipApi }
+                    );
                 }
-                if (!nodeConfirmed) {
-                    const result = await verifyWithTimeout(payment_txid_node);
-                    if (result === 'timeout') {
-                        console.log('MemoryIndexer: MSB verification timeout for node txid — payment NOT confirmed (attempt ' + attempt + '/' + maxAttempts + ')');
-                    } else if (result !== null) {
-                        nodeConfirmed = true;
-                    }
+                if (!nodeResult.confirmed) {
+                    nodeResult = await verifyPayment(
+                        payment_txid_node, this.nodeAddress, split.node_share, this.msb,
+                        { apiTimeoutMs: this.paymentApiTimeoutMs, msbTimeoutMs: this.paymentVerifyTimeoutMs, skipApi: this.paymentSkipApi }
+                    );
                 }
-                if (creatorConfirmed && nodeConfirmed) break;
+                if (creatorResult.confirmed && nodeResult.confirmed) break;
+
+                // Hard mismatch = fraud, don't retry
+                const hardFail = ['recipient_mismatch', 'amount_mismatch'].includes(creatorResult.error)
+                    || ['recipient_mismatch', 'amount_mismatch'].includes(nodeResult.error);
+                if (hardFail) break;
+
                 if (attempt < maxAttempts) {
                     console.log('MemoryIndexer: payment verification attempt', attempt + '/' + maxAttempts,
-                        'for', memory_id, '— creator:', creatorConfirmed, 'node:', nodeConfirmed, '— retrying in 3s');
+                        'for', memory_id, '— retrying in 3s');
                     await new Promise(r => setTimeout(r, retryDelayMs));
                 }
             }
 
-            if (!creatorConfirmed || !nodeConfirmed) {
-                const which = !creatorConfirmed ? 'creator' : 'node';
-                const txid = !creatorConfirmed ? payment_txid_creator : payment_txid_node;
+            if (!creatorResult.confirmed || !nodeResult.confirmed) {
+                const which = !creatorResult.confirmed ? 'creator' : 'node';
+                const txid = !creatorResult.confirmed ? payment_txid_creator : payment_txid_node;
+                const error = !creatorResult.confirmed ? creatorResult.error : nodeResult.error;
                 const response = {
                     v: 1,
                     type: 'payment_not_confirmed',
                     memory_id,
                     payment_txid: txid,
                     which,
+                    error: error || 'verification_failed',
                     ts: Date.now()
                 };
                 this._respond(channel, response, replyFn);
                 console.log('MemoryIndexer: payment_not_confirmed (' + which + ') for', memory_id,
-                    '— txid:', txid, '— exhausted', maxAttempts, 'attempts');
+                    '— txid:', txid, '— error:', error);
                 return;
             }
         }
@@ -1026,47 +1027,57 @@ export class MemoryIndexer extends Feature {
             return;
         }
 
-        // Verify payments on MSB before delivering (no trust fallback)
+        // Verify payments via TracAPI (validates recipient + amount) with MSB fallback.
+        // Skip verification if MSB is not available (test environment).
         if (this.requirePayment && hasPayment && !isFreeSkill && this.msb) {
-            const verifyTimeoutMs = this.paymentVerifyTimeoutMs || 8000;
+            const total = BigInt(skillPrice);
+            const creatorShare = (total * 80n / 100n).toString();
+            const nodeShare = (total * 20n / 100n).toString();
+            const creatorAddress = this._getCreatorAddress(stored.author);
             const maxAttempts = this.paymentMaxAttempts || 3;
             const retryDelayMs = this.paymentRetryMs || 3000;
-            let creatorConfirmed = false;
-            let nodeConfirmed = false;
 
-            const verifyWithTimeout = (txid) => {
-                return Promise.race([
-                    this.msb.state.getTransactionConfirmedLength(txid),
-                    new Promise(resolve => setTimeout(() => resolve('timeout'), verifyTimeoutMs))
-                ]);
-            };
+            let creatorResult = { confirmed: false };
+            let nodeResult = { confirmed: false };
 
             for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-                if (!creatorConfirmed) {
-                    const result = await verifyWithTimeout(payment_txid_creator);
-                    if (result !== 'timeout' && result !== null) creatorConfirmed = true;
+                if (!creatorResult.confirmed) {
+                    creatorResult = await verifyPayment(
+                        payment_txid_creator, creatorAddress, creatorShare, this.msb,
+                        { apiTimeoutMs: this.paymentApiTimeoutMs, msbTimeoutMs: this.paymentVerifyTimeoutMs, skipApi: this.paymentSkipApi }
+                    );
                 }
-                if (!nodeConfirmed) {
-                    const result = await verifyWithTimeout(payment_txid_node);
-                    if (result !== 'timeout' && result !== null) nodeConfirmed = true;
+                if (!nodeResult.confirmed) {
+                    nodeResult = await verifyPayment(
+                        payment_txid_node, this.nodeAddress, nodeShare, this.msb,
+                        { apiTimeoutMs: this.paymentApiTimeoutMs, msbTimeoutMs: this.paymentVerifyTimeoutMs, skipApi: this.paymentSkipApi }
+                    );
                 }
-                if (creatorConfirmed && nodeConfirmed) break;
+                if (creatorResult.confirmed && nodeResult.confirmed) break;
+
+                const hardFail = ['recipient_mismatch', 'amount_mismatch'].includes(creatorResult.error)
+                    || ['recipient_mismatch', 'amount_mismatch'].includes(nodeResult.error);
+                if (hardFail) break;
+
                 if (attempt < maxAttempts) {
                     await new Promise(r => setTimeout(r, retryDelayMs));
                 }
             }
 
-            if (!creatorConfirmed || !nodeConfirmed) {
+            if (!creatorResult.confirmed || !nodeResult.confirmed) {
+                const which = !creatorResult.confirmed ? 'creator' : 'node';
+                const error = !creatorResult.confirmed ? creatorResult.error : nodeResult.error;
                 const response = {
                     v: 1,
                     type: 'payment_not_confirmed',
                     skill_id,
-                    payment_txid: !creatorConfirmed ? payment_txid_creator : payment_txid_node,
-                    which: !creatorConfirmed ? 'creator' : 'node',
+                    payment_txid: !creatorResult.confirmed ? payment_txid_creator : payment_txid_node,
+                    which,
+                    error: error || 'verification_failed',
                     ts: Date.now()
                 };
                 this._respond(channel, response, replyFn);
-                console.log('MemoryIndexer: skill payment NOT confirmed for', skill_id);
+                console.log('MemoryIndexer: skill payment NOT confirmed for', skill_id, '— error:', error);
                 return;
             }
         }
